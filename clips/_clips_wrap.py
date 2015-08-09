@@ -24,7 +24,7 @@ clips - high-level interface to the CLIPS engine module
         (c) 2002-2008 Francesco Garosi/JKS
 """
 
-__revision__ = "$Id: _clips_wrap.py 374 2009-10-02 21:07:01Z franz $"
+__revision__ = "$Id: _clips_wrap.py 342 2008-02-22 01:17:23Z Franz $"
 
 # ========================================================================== #
 # imports - these are hidden to module user
@@ -724,7 +724,7 @@ class _clips_Status(object):
 
     def __property_setFactDuplication(self, v):
         _c.setFactDuplication(v)
-    def __property_getFactDuplication(self):
+    def __property_getFactDuplication(self, v):
         return bool(_c.getFactDuplication())
     FactDuplication = property(
         __property_getFactDuplication,
@@ -4023,7 +4023,7 @@ def Call(func, args=None):
         t = type(args)
         if t == str:
             sargs = args
-        elif t == unicode:
+        if t == unicode:
             sargs = str(args)
         elif t in (ClipsIntegerType, ClipsFloatType, ClipsStringType,
                    ClipsSymbolType, ClipsNilType, ClipsInstanceNameType,

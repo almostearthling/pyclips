@@ -1,7 +1,7 @@
 /* clipsmodule.c
  *
  * Python module to embed CLIPS into Python.
- * $Id: clipsmodule.c 358 2008-12-10 23:56:57Z Franz $
+ * $Id: clipsmodule.c 345 2008-02-22 17:44:54Z Franz $
  * (c) 2002-2008 - Francesco Garosi/JKS
  */
 
@@ -42,7 +42,7 @@ static char clips__doc__[] =
 
 /* the release string, in case it should be used someday */
 static char *clips__revision__ =
-    "$Id: clipsmodule.c 358 2008-12-10 23:56:57Z Franz $";
+    "$Id: clipsmodule.c 345 2008-02-22 17:44:54Z Franz $";
 
 
 /* module scope exception */
@@ -209,6 +209,19 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
 #define CHECK_NOARGS(_a) do { \
     if(!PyArg_ParseTuple((_a), "")) FAIL(); } while(0)
 
+#ifdef ALLOW_CURRENT_ENVIRONMENT_ALIASING
+#define CHECK_NOCURENV(_e)
+#else
+/* check for environment not to be current and fail if it is */
+#define CHECK_NOCURENV(_e) do { \
+        if(clips_environment_value(_e) == GetCurrentEnvironment()) { \
+            ERROR_CLIPSSYS_CURENV(); \
+            FAIL(); \
+        } \
+    } while(0)
+#endif /* ALLOW_CURRENT_ENVIRONMENT_ALIASING */
+
+
 /* Macros to enable/disable memory checking on a per-function basis:
  *  note that the second macro must always be used when the first is
  *  used, and immediately after each memory allocating function has
@@ -232,6 +245,81 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
 #endif /* USE_MEMORY_ERROR_HANDLER */
 
 
+/* status function builder */
+#define FUNC_GET_ONLY(_py, _sn, _api, _type) \
+    static char _sn##__doc__[] = \
+    "" #_py "()\nequivalent of C API " #_api "()"; \
+    static PyObject *_sn(PyObject *_self, PyObject *_args) { \
+        int _i = 0; \
+        CHECK_NOARGS(_args); \
+        ACQUIRE_MEMORY_ERROR(); \
+        _i = _api(); \
+        RELEASE_MEMORY_ERROR(); \
+        return Py_BuildValue(_type, _i); \
+        BEGIN_FAIL \
+        END_FAIL \
+    }
+#define STATUS_FUNC_GET FUNC_GET_ONLY
+#define STATUS_FUNC_GET_BOOL(_py, _sn, _api) \
+    static char _sn##__doc__[] = \
+    "" #_py "() -> bool\nequivalent of C API " #_api "()"; \
+    static PyObject *_sn(PyObject *_self, PyObject *_args) { \
+        int _i = 0; \
+        CHECK_NOARGS(_args); \
+        ACQUIRE_MEMORY_ERROR(); \
+        _i = _api(); \
+        RELEASE_MEMORY_ERROR(); \
+        return Py_BuildValue("i", _i ? 1 : 0); \
+        BEGIN_FAIL \
+        END_FAIL \
+    }
+
+#define STATUS_FUNC_SET_BOOL(_py, _sn, _api) \
+    static char _sn##__doc__[] = \
+    "" #_py "()\nequivalent of C API " #_api "(bool)"; \
+    static PyObject *_sn(PyObject *_self, PyObject *_args) { \
+        PyObject *_o = NULL; \
+        if(!PyArg_ParseTuple(_args, "O", &_o)) \
+            FAIL(); \
+        ACQUIRE_MEMORY_ERROR(); \
+        _api(PyObject_IsTrue(_o)); \
+        RELEASE_MEMORY_ERROR(); \
+        RETURN_NONE(); \
+        BEGIN_FAIL \
+        END_FAIL \
+    }
+
+#define FUNC_VOID_BOOL(_py, _sn, _api) \
+    static char _sn##__doc__[] = \
+    "" #_py "()\nequivalent of C API " #_api "()"; \
+    static PyObject *_sn(PyObject *_self, PyObject *_args) { \
+        CHECK_NOARGS(_args); \
+        ACQUIRE_MEMORY_ERROR(); \
+        if(!_api()) { \
+            RELEASE_MEMORY_ERROR(); \
+            ERROR_CLIPS(_error_clips_impossible); \
+            FAIL(); \
+        } \
+        RELEASE_MEMORY_ERROR(); \
+        RETURN_NONE(); \
+        BEGIN_FAIL \
+        END_FAIL \
+    }
+#define FUNC_VOID_ONLY(_py, _sn, _api) \
+    static char _sn##__doc__[] = \
+    "" #_py "()\nequivalent of C API " #_api "()"; \
+    static PyObject *_sn(PyObject *_self, PyObject *_args) { \
+        CHECK_NOARGS(_args); \
+        ACQUIRE_MEMORY_ERROR(); \
+        _api(); \
+        RELEASE_MEMORY_ERROR(); \
+        RETURN_NONE(); \
+        BEGIN_FAIL \
+        END_FAIL \
+    }
+
+
+/* environment-version macros */
 /* status function builder */
 #define E_FUNC_GET_ONLY(_py, _sn, _api, _type) \
     static char _sn##__doc__[] = \
@@ -273,6 +361,7 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
         clips_EnvObject *_env = NULL; \
         if(!PyArg_ParseTuple(_args, "O!O", &clips_EnvType, &_env, &_o)) \
             FAIL(); \
+        CHECK_NOCURENV(_env); \
         ACQUIRE_MEMORY_ERROR(); \
         _api(clips_environment_value(_env), PyObject_IsTrue(_o)); \
         RELEASE_MEMORY_ERROR(); \
@@ -288,6 +377,7 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
         clips_EnvObject *_env = NULL; \
         if(!PyArg_ParseTuple(_args, "O!", &clips_EnvType, &_env)) \
             FAIL(); \
+        CHECK_NOCURENV(_env); \
         ACQUIRE_MEMORY_ERROR(); \
         if(!_api(clips_environment_value(_env))) { \
             ERROR_CLIPS(_error_clips_impossible); \
@@ -306,6 +396,7 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
         clips_EnvObject *_env = NULL; \
         if(!PyArg_ParseTuple(_args, "O!", &clips_EnvType, &_env)) \
             FAIL(); \
+        CHECK_NOCURENV(_env); \
         ACQUIRE_MEMORY_ERROR(); \
         _api(clips_environment_value(_env)); \
         RELEASE_MEMORY_ERROR(); \
@@ -316,9 +407,21 @@ static char _error_router_readonly[] = "R03: buffer is read-only";
 
 
 /* macros used to verify if objects are being garbaged */
+#define CHECK_VALID_FACT(_o) do { \
+        if(!FactExistp(clips_fact_value(_o))) { \
+            ERROR_CLIPSSYS_GARBFACT(); \
+            FAIL(); \
+        } \
+    } while(0)
 #define ENV_CHECK_VALID_FACT(_e, _o) do { \
         if(!EnvFactExistp(_e, clips_fact_value(_o))) { \
             ERROR_CLIPSSYS_GARBFACT(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_VALID_INSTANCE(_o) do { \
+        if(!ValidInstanceAddress(clips_instance_value(_o))) { \
+            ERROR_CLIPSSYS_GARBINSTANCE(); \
             FAIL(); \
         } \
     } while(0)
@@ -533,6 +636,7 @@ typedef struct {
             INIT_LOPTR_HASH_TABLE(p->clips_StrayFacts); \
         } \
     } while(0)
+#define CLEAR_LOST_FACTS() LOPTR_reset_hash_table(clips_StrayFacts)
 #define ENV_CLEAR_LOST_FACTS(_pe) \
     LOPTR_reset_hash_table((_pe)->clips_StrayFacts)
 #else
@@ -542,6 +646,7 @@ typedef struct {
         if(p) \
             clips_environment_valid(p) = TRUE; \
     } while(0)
+#define CLEAR_LOST_FACTS()
 #define ENV_CLEAR_LOST_FACTS(_pe)
 #endif /* USE_NONASSERT_CLIPSGCLOCK */
 
@@ -685,41 +790,79 @@ static BOOL clips_GCLocked = FALSE;
 LOPTR_HASH_TABLE(clips_StrayFacts) = { 0 };
 
 F_INLINE void clips_lock_gc(clips_EnvObject *pyenv) {
-    if(!pyenv->clips_GCLocked && pyenv->clips_NotAssertedFacts > 0) {
-        EnvIncrementGCLocks(clips_environment_value(pyenv));
-        pyenv->clips_GCLocked = TRUE;
+    if(pyenv) {
+        if(!pyenv->clips_GCLocked && pyenv->clips_NotAssertedFacts > 0) {
+            EnvIncrementGCLocks(clips_environment_value(pyenv));
+            pyenv->clips_GCLocked = TRUE;
+        }
+    } else {
+        if(!clips_GCLocked && clips_NotAssertedFacts > 0) {
+            IncrementGCLocks();
+            clips_GCLocked = TRUE;
+        }
     }
 }
 F_INLINE void clips_unlock_gc(clips_EnvObject *pyenv) {
-    if(pyenv->clips_GCLocked && pyenv->clips_NotAssertedFacts == 0) {
-        pyenv->clips_GCLocked = FALSE;
-        EnvDecrementGCLocks(clips_environment_value(pyenv));
+    if(pyenv) {
+        if(pyenv->clips_GCLocked && pyenv->clips_NotAssertedFacts == 0) {
+            pyenv->clips_GCLocked = FALSE;
+            EnvDecrementGCLocks(clips_environment_value(pyenv));
+        }
+    } else {
+        if(clips_GCLocked && clips_NotAssertedFacts == 0) {
+            clips_GCLocked = FALSE;
+            DecrementGCLocks();
+        }
     }
 }
 F_INLINE BOOL add_FactObject_lock(clips_EnvObject *pyenv) {
-    pyenv->clips_NotAssertedFacts++;
+    if(pyenv)
+        pyenv->clips_NotAssertedFacts++;
+    else
+        clips_NotAssertedFacts++;
     return TRUE;
 }
 F_INLINE BOOL remove_FactObject_lock(clips_EnvObject *pyenv) {
-    if(pyenv->clips_NotAssertedFacts > 0) {
-        pyenv->clips_NotAssertedFacts--;
-        return TRUE;
+    if(pyenv) {
+        if(pyenv->clips_NotAssertedFacts > 0) {
+            pyenv->clips_NotAssertedFacts--;
+            return TRUE;
+        }
+    } else {
+        if(clips_NotAssertedFacts > 0) {
+            clips_NotAssertedFacts--;
+            return TRUE;
+        }
     }
     return FALSE;
 }
 F_INLINE BOOL reset_FactObject_lock(clips_EnvObject *pyenv) {
-    if(pyenv->clips_NotAssertedFacts > 0) {
-        pyenv->clips_NotAssertedFacts = 0;
-        if(pyenv->clips_GCLocked) {
-            pyenv->clips_GCLocked = FALSE;
-            EnvDecrementGCLocks(clips_environment_value(pyenv));
+    if(pyenv) {
+        if(pyenv->clips_NotAssertedFacts > 0) {
+            pyenv->clips_NotAssertedFacts = 0;
+            if(pyenv->clips_GCLocked) {
+                pyenv->clips_GCLocked = FALSE;
+                EnvDecrementGCLocks(clips_environment_value(pyenv));
+            }
+            return TRUE;
         }
-        return TRUE;
+    } else {
+        if(clips_NotAssertedFacts > 0) {
+            clips_NotAssertedFacts = 0;
+            if(clips_GCLocked) {
+                clips_GCLocked = FALSE;
+                DecrementGCLocks();
+            }
+            return TRUE;
+        }
     }
     return FALSE;
 }
 
 /* through the loptr.c utility we can check whether or not a fact is lost */
+#define APPEND_HASH_FACT(_p) LOPTR_append(clips_StrayFacts, (void *)(_p))
+#define REMOVE_HASH_FACT(_p) LOPTR_remove(clips_StrayFacts, (void *)(_p))
+#define LOSE_HASH_FACTS() LOPTR_apply(clips_StrayFacts, lose_fact)
 #define ENV_APPEND_HASH_FACT(_pe, _p) \
     LOPTR_append((_pe)->clips_StrayFacts, (void *)(_p))
 #define ENV_REMOVE_HASH_FACT(_pe, _p) \
@@ -730,6 +873,12 @@ F_INLINE BOOL reset_FactObject_lock(clips_EnvObject *pyenv) {
 #define SPEC_REMOVE_HASH_FACT(_sfl, _p) LOPTR_remove((_sfl), (void *)(_p))
 
 /* check if a fact is lost: the ENV version is for completeness only */
+#define CHECK_LOST_FACT(_o) do { \
+        if(clips_fact_lost(_o)) { \
+            ERROR_CLIPSSYS_GARBFACT(); \
+            FAIL(); \
+        } \
+    } while(0)
 #define ENV_CHECK_LOST_FACT(_e, _o) do { \
         if(clips_fact_lost(_o)) { \
             ERROR_CLIPSSYS_GARBFACT(); \
@@ -738,11 +887,16 @@ F_INLINE BOOL reset_FactObject_lock(clips_EnvObject *pyenv) {
     } while(0)
 
 /* and these are needed to inform the system about creation or assertion */
+#define ADD_NONASSERTED_FACT() add_FactObject_lock(NULL)
+#define REMOVE_JUSTASSERTED_FACT() remove_FactObject_lock(NULL)
 #define ENV_ADD_NONASSERTED_FACT(_pe) add_FactObject_lock(_pe)
 #define ENV_REMOVE_JUSTASSERTED_FACT(_pe) remove_FactObject_lock(_pe)
 
+#define RESET_ASSERTED_FACTS() reset_FactObject_lock(NULL)
 #define ENV_RESET_ASSERTED_FACTS(_pe) reset_FactObject_lock(_pe)
 
+#define CLIPS_LOCK_GC() clips_lock_gc(NULL)
+#define CLIPS_UNLOCK_GC() clips_unlock_gc(NULL)
 #define ENV_CLIPS_LOCK_GC(_pe) clips_lock_gc(_pe)
 #define ENV_CLIPS_UNLOCK_GC(_pe) clips_unlock_gc(_pe)
 
@@ -763,13 +917,20 @@ F_INLINE BOOL reset_FactObject_lock(clips_EnvObject *pyenv) {
 
 /* symbols to always force that garbage collector in CLIPS to be locked */
 #ifdef USE_CLIPSGCLOCK
+#define CLIPS_LOCK_GC() IncrementGCLocks()
+#define CLIPS_UNLOCK_GC() DecrementGCLocks()
 #define ENV_CLIPS_LOCK_GC(_pe) EnvIncrementGCLocks(clips_environment_value(_pe))
 #define ENV_CLIPS_UNLOCK_GC(_pe) EnvDecrementGCLocks(clips_environment_value(_pe))
 #else
+#define CLIPS_LOCK_GC()
+#define CLIPS_UNLOCK_GC()
 #define ENV_CLIPS_LOCK_GC(_pe)
 #define ENV_CLIPS_UNLOCK_GC(_pe)
 #endif /* USE_CLIPSGCLOCK */
 
+#define ADD_NONASSERTED_FACT()
+#define REMOVE_JUSTASSERTED_FACT()
+#define RESET_ASSERTED_FACTS()
 #define ENV_ADD_NONASSERTED_FACT(_pe)
 #define ENV_REMOVE_JUSTASSERTED_FACT(_pe)
 #define ENV_RESET_ASSERTED_FACTS(_pe)
@@ -777,10 +938,14 @@ F_INLINE BOOL reset_FactObject_lock(clips_EnvObject *pyenv) {
 #define COPY_ADDITIONAL_ENVIRONMENT_DATA(_pe)
 #define INJECT_ADDITIONAL_ENVIRONMENT_DATA(_pe)
 
+#define APPEND_HASH_FACT(_p)
+#define REMOVE_HASH_FACT(_p)
+#define LOSE_HASH_FACTS()
 #define ENV_APPEND_HASH_FACT(_pe, _p)
 #define ENV_REMOVE_HASH_FACT(_pe, _p)
 #define SPEC_REMOVE_HASH_FACT(_sfl, _p)
 #define ENV_LOSE_HASH_FACTS(_pe)
+#define CHECK_LOST_FACT(_o)
 #define ENV_CHECK_LOST_FACT(_e, _o)
 
 #endif /* USE_NONASSERT_CLIPSGCLOCK */
@@ -1338,11 +1503,19 @@ PyObject *i_do2py_mfhelp_e(void *env, void *ptr, int pos) {
     case INSTANCE_ADDRESS:
         if(!ptr)
             FAIL();
-        clips_instance_New(env, io);
-        if(!io)
-            FAIL();
-        clips_instance_assign(io, GetMFValue(ptr, pos));
-        ENV_CHECK_VALID_INSTANCE(env, io);
+        if(env) {
+            clips_instance_New(env, io);
+            if(!io)
+                FAIL();
+            clips_instance_assign(io, GetMFValue(ptr, pos));
+            ENV_CHECK_VALID_INSTANCE(env, io);
+        } else {
+            clips_instance_New(GetCurrentEnvironment(), io);
+            if(!io)
+                FAIL();
+            clips_instance_assign(io, GetMFValue(ptr, pos));
+            CHECK_VALID_INSTANCE(io);
+        }
         clips_instance_lock(io);
         p = Py_BuildValue("(iO)", t, clips_instance_value(io));
         break;
@@ -1359,11 +1532,19 @@ PyObject *i_do2py_mfhelp_e(void *env, void *ptr, int pos) {
     case FACT_ADDRESS:
         if(!ptr)
             FAIL();
-        clips_fact_New(env, fo);
-        if(!fo)
-            FAIL();
-        clips_fact_assign(fo, GetMFValue(ptr, pos));
-        ENV_CHECK_VALID_FACT(env, fo);
+        if(env) {
+            clips_fact_New(env, fo);
+            if(!fo)
+                FAIL();
+            clips_fact_assign(fo, GetMFValue(ptr, pos));
+            ENV_CHECK_VALID_FACT(env, fo);
+        } else {
+            clips_fact_New(GetCurrentEnvironment(), fo);
+            if(!fo)
+                FAIL();
+            clips_fact_assign(fo, GetMFValue(ptr, pos));
+            CHECK_VALID_FACT(fo);
+        }
         clips_fact_readonly(fo) = TRUE;
         clips_fact_lock(fo);
         p = Py_BuildValue("(iO)", t, fo);
@@ -1428,11 +1609,19 @@ PyObject *i_do2py_e(void *env, DATA_OBJECT *o) {
         ptr = DOPToPointer(o);
         if(!ptr)
             FAIL();
-        clips_instance_New(env, io);
-        if(!io)
-            FAIL();
-        clips_instance_assign(io, ptr);
-        ENV_CHECK_VALID_INSTANCE(env, io);
+        if(env) {
+            clips_instance_New(env, io);
+            if(!io)
+                FAIL();
+            clips_instance_assign(io, ptr);
+            ENV_CHECK_VALID_INSTANCE(env, io);
+        } else {
+            clips_instance_New(GetCurrentEnvironment(), io);
+            if(!io)
+                FAIL();
+            clips_instance_assign(io, ptr);
+            CHECK_VALID_INSTANCE(io);
+        }
         clips_instance_lock(io);
         p = Py_BuildValue("(iO)", t, io);
         break;
@@ -1451,11 +1640,19 @@ PyObject *i_do2py_e(void *env, DATA_OBJECT *o) {
         ptr = DOPToPointer(o);
         if(!ptr)
             FAIL();
-        clips_fact_New(env, fo);
-        if(!fo)
-            FAIL();
-        clips_fact_assign(fo, ptr);
-        ENV_CHECK_VALID_FACT(env, fo);
+        if(env) {
+            clips_fact_New(env, fo);
+            if(!fo)
+                FAIL();
+            clips_fact_assign(fo, ptr);
+            ENV_CHECK_VALID_FACT(env, fo);
+        } else {
+            clips_fact_New(GetCurrentEnvironment(), fo);
+            if(!fo)
+                FAIL();
+            clips_fact_assign(fo, ptr);
+            CHECK_VALID_FACT(fo);
+        }
         clips_fact_readonly(fo) = TRUE;
         clips_fact_lock(fo);
         p = Py_BuildValue("(iO)", t, fo);
@@ -1474,6 +1671,8 @@ BEGIN_FAIL
     Py_XDECREF(fo);
 END_FAIL
 }
+
+#define i_do2py(_o) i_do2py_e(NULL, _o)
 
 
 /* helpers to convert couples (type, value) to DATA_OBJECTs:
@@ -1627,8 +1826,7282 @@ fail:
     return FALSE;
 }
 
+#define i_py2do(_p, _o) i_py2do_e(GetCurrentEnvironment(), _p, _o)
+
 
 /* Part Two: the implementation */
+
+/* Part Two - Section 1: Globals */
+
+
+/* 4.1 - Environment Functions */
+
+/* AddClearFunction */
+UNIMPLEMENT(addClearFunction, g_addClearFunction)
+/* AddPeriodicFunction */
+UNIMPLEMENT(addPeriodicFunction, g_addPeriodicFunction)
+/* AddResetFunction */
+UNIMPLEMENT(addResetFunction, g_addResetFunction)
+
+/* bload */
+static char g_bload__doc__[] = "\
+bload(filename)\n\
+load a binary image of environment constructs\n\
+arguments:\n\
+  filename (str) - the name of binary file to load from";
+static PyObject *g_bload(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Bload(fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* bsave */
+static char g_bsave__doc__[] = "\
+bsave(filename)\n\
+save a binary image of environment constructs\n\
+arguments:\n\
+  filename (str) - the name of binary file to save to";
+static PyObject *g_bsave(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Bsave(fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* clear */
+static char g_clear__doc__[] = "\
+clear()\n\
+clear environment";
+static PyObject *g_clear(PyObject *self, PyObject *args) {
+
+    CHECK_NOARGS(args);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Clear_PY()) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPSSYS_ENVNOCLEAR();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+#ifdef USE_CLEAR_RESETGCCOUNTERS
+    RESET_ASSERTED_FACTS();
+#endif /* USE_CLEAR_RESETGCCOUNTERS */
+    LOSE_HASH_FACTS();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* functionCall */
+static char g_functionCall__doc__[] = "\
+functionCall(funcname [, args]) -> (type, value)\n\
+call an internal function\n\
+returns: the function result, as a pair (type, return value)\n\
+arguments:\n\
+  funcname (str) - the internal function or operator name\n\
+  args (str) - string containing a blank separated list of arguments";
+static PyObject *g_functionCall(PyObject *self, PyObject *args) {
+    char *func = NULL, *fargs = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "s|s", &func, &fargs))
+        FAIL();
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(FunctionCall(func, fargs, &o)) {
+        SetEvaluationError(GetCurrentEnvironment(), FALSE);
+        SetHaltExecution(GetCurrentEnvironment(), FALSE);
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_FUNCCALL();
+        FAIL();
+    }
+    SetEvaluationError(GetCurrentEnvironment(), FALSE);
+    SetHaltExecution(GetCurrentEnvironment(), FALSE);
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    p = i_do2py(&o);
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    SKIP();
+    Py_XDECREF(p);
+END_FAIL
+}
+
+
+/* getAutoFloatDividend */
+STATUS_FUNC_GET_BOOL(getAutoFloatDividend,
+                     g_getAutoFloatDividend,
+                     GetAutoFloatDividend)
+
+/* getDynamicConstraintChecking */
+STATUS_FUNC_GET_BOOL(getDynamicConstraintChecking,
+                     g_getDynamicConstraintChecking,
+                     GetDynamicConstraintChecking)
+
+/* getSequenceOperatorRecognition */
+STATUS_FUNC_GET_BOOL(getSequenceOperatorRecognition,
+                     g_getSequenceOperatorRecognition,
+                     GetSequenceOperatorRecognition)
+
+/* getStaticConstraintChecking */
+STATUS_FUNC_GET_BOOL(getStaticConstraintChecking,
+                     g_getStaticConstraintChecking,
+                     GetStaticConstraintChecking)
+
+/* initializeEnvironment: NEVER TO BE IMPLEMENTED
+ *  the main environment is initialized at module load time
+ */
+
+/* load */
+static char g_load__doc__[] = "\
+load(filename)\n\
+load constructs into environment\n\
+arguments:\n\
+  filename (str) - the name of file to load constructs from";
+static PyObject *g_load(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    int rv;
+
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    rv = Load(fn);
+    RELEASE_MEMORY_ERROR();
+    if(rv == 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    if(rv < 0) {
+        ERROR_CLIPS_PARSEF();
+        FAIL();
+    }
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* removeClearFunction */
+UNIMPLEMENT(removeClearFunction, g_removeClearFunction)
+
+/* removePeriodicFunction */
+UNIMPLEMENT(removePeriodicFunction, g_removePeriodicFunction)
+
+/* removeResetFunction */
+UNIMPLEMENT(removeResetFunction, g_removeResetFunction)
+
+/* reset */
+static char g_reset__doc__[] = "\
+reset()\n\
+reset environment";
+static PyObject *g_reset(PyObject *self, PyObject *args) {
+
+    /* this function may cause CLIPS to allocate memory */
+
+    CHECK_NOARGS(args);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    Reset();
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* save */
+static char g_save__doc__[] = "\
+save(filename)\n\
+save constructs to a file\n\
+arguments:\n\
+  filename (str) - the name of file to save constructs to";
+static PyObject *g_save(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    void *env = NULL;
+
+    /* this function may cause CLIPS to allocate memory */
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!EnvSave(env, fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setAutoFloatDividend */
+STATUS_FUNC_SET_BOOL(setAutoFloatDividend,
+                     g_setAutoFloatDividend,
+                     SetAutoFloatDividend)
+
+/* setDynamicConstraintChecking */
+STATUS_FUNC_SET_BOOL(setDynamicConstraintChecking,
+                     g_setDynamicConstraintChecking,
+                     SetDynamicConstraintChecking)
+
+/* setSequenceOperatorRecognition */
+STATUS_FUNC_SET_BOOL(setSequenceOperatorRecognition,
+                     g_setSequenceOperatorRecognition,
+                     SetSequenceOperatorRecognition)
+
+/* setStaticConstraintChecking */
+STATUS_FUNC_SET_BOOL(setStaticConstraintChecking,
+                     g_setStaticConstraintChecking,
+                     SetStaticConstraintChecking)
+
+/* batchStar */
+static char g_batchStar__doc__[] = "\
+batchStar(filename)\n\
+batch execute commands stored in specified file\n\
+arguments:\n\
+  filename (str) - the name of file to read commands from";
+static PyObject *g_batchStar(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!BatchStar(fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* build */
+static char g_build__doc__[] = "\
+build(construct)\n\
+define specified construct\n\
+arguments:\n\
+  construct (str) - the construct to be added";
+static PyObject *g_build(PyObject *self, PyObject *args) {
+    char *cons = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &cons))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Build(cons)) {
+        SetEvaluationError(GetCurrentEnvironment(), FALSE);
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_PARSEX();
+        FAIL();
+    }
+    SetEvaluationError(GetCurrentEnvironment(), FALSE);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* eval */
+static char g_eval__doc__[] = "\
+eval(expression) -> (type, value)\n\
+evaluate the provided expression\n\
+returns: a pair holding the result in the form (type, return value)\n\
+arguments:\n\
+  expression (str) - the expression to evaluate";
+static PyObject *g_eval(PyObject *self, PyObject *args) {
+    char *expr = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "s", &expr))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Eval(expr, &o)) {
+        SetEvaluationError(GetCurrentEnvironment(), FALSE);
+        SetHaltExecution(GetCurrentEnvironment(), FALSE);
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_EVALX();
+        FAIL();
+    }
+    SetEvaluationError(GetCurrentEnvironment(), FALSE);
+    SetHaltExecution(GetCurrentEnvironment(), FALSE);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p)
+        RETURN_NONE();
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* 4.2 - Debugging Functions */
+
+/* dribbleActive */
+STATUS_FUNC_GET_BOOL(dribbleActive, g_dribbleActive, DribbleActive)
+
+/* dribbleOff */
+FUNC_VOID_BOOL(dribbleOff, g_dribbleOff, DribbleOff)
+
+/* dribbleOn */
+static char g_dribbleOn__doc__[] = "\
+dribbleOn(filename)\n\
+turn the dribble function on\n\
+arguments:\n\
+  filename (str) - the name of file to write dribble information to";
+static PyObject *g_dribbleOn(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!DribbleOn(fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getWatchItem */
+static char g_getWatchItem__doc__[] = "\
+getWatchItem(item) -> bool\n\
+tell whether the specified item is watched or not\n\
+returns: True if specified item is being watched, False otherwise\n\
+arguments:\n\
+  item (str) - the item to monitor the status of, can be one of\n\
+               the following: facts, rules, focus, activations,\n\
+               compilations, statistics, globals, slots, instances,\n\
+               messages, message-handlers, generic-functions,\n\
+               method or deffunctions.";
+static PyObject *g_getWatchItem(PyObject *self, PyObject *args) {
+    char *item = NULL;
+    int rv = 0;
+
+    if(!PyArg_ParseTuple(args, "s", &item))
+        FAIL();
+    rv = GetWatchItem(item);
+    if(rv < 0) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    return Py_BuildValue("i", rv ? 1 : 0);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* unwatch */
+static char g_unwatch__doc__[] = "\
+unwatch(item)\n\
+turn off tracing for specified item\n\
+arguments:\n\
+  item (str) - the item to disable tracing for, can be one of\n\
+               the following: facts, rules, focus, activations,\n\
+               compilations, statistics, globals, slots, instances,\n\
+               messages, message-handlers, generic-functions,\n\
+               method or deffunctions.";
+static PyObject *g_unwatch(PyObject *self, PyObject *args) {
+    char *item = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &item))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Unwatch(item)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* watch */
+static char g_watch__doc__[] = "\
+watch(item)\n\
+turn on tracing for specified item\n\
+arguments:\n\
+  item (str) - the item to enable tracing for, can be one of\n\
+               the following: facts, rules, focus, activations,\n\
+               compilations, statistics, globals, slots, instances,\n\
+               messages, message-handlers, generic-functions,\n\
+               method or deffunctions.";
+static PyObject *g_watch(PyObject *self, PyObject *args) {
+    char *item = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &item))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Watch(item)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.3 - Deftemplate functions */
+
+/* helper to check whether there is still this deftemplate */
+F_INLINE void *deftemplateExists(void *ptr) {
+	void *rv = GetNextDeftemplate(NULL);
+	while(rv != NULL) {
+		if(rv == ptr) return rv;
+		else rv = GetNextDeftemplate(rv);
+	}
+	return NULL;
+}
+#define PYDEFTEMPLATE_EXISTS(_p) deftemplateExists(clips_deftemplate_value(_p))
+#define CHECK_DEFTEMPLATE(_p) do { \
+        if(!PYDEFTEMPLATE_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFTEMPLATE(_p) do { \
+        if(_p && !PYDEFTEMPLATE_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* deftemplateModule */
+static char g_deftemplateModule__doc__[] = "\
+deftemplateModule(deftemplate) -> str\n\
+retrieve the name of the module where the provided deftemplate resides\n\
+returns: a string containing a module name\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect";
+static PyObject *g_deftemplateModule(PyObject *self, PyObject *args) {
+    char *module = NULL;
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    module = DeftemplateModule(clips_deftemplate_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!module) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(module);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+#if CLIPS_MINOR > 23
+
+/* deftemplateSlotAllowedValues */
+static char g_deftemplateSlotAllowedValues__doc__[] = "\
+deftemplateSlotAllowedValues(deftemplate, name) -> (MULTIFIELD, list)\n\
+retrieve the allowed values for a slot of given deftemplate\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotAllowedValues(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotAllowedValues(clips_deftemplate_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotCardinality */
+static char g_deftemplateSlotCardinality__doc__[] = "\
+deftemplateSlotCardinality(deftemplate, name) -> (MULTIFIELD, list)\n\
+retrieve the cardinality for a slot of given deftemplate\n\
+returns: MULTIFIELD and a list of pairs of pairs (type, value)\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotCardinality(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotCardinality(clips_deftemplate_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotDefaultP */
+static char g_deftemplateSlotDefaultP__doc__[] = "\
+deftemplateSlotCardinality(deftemplate, name) -> int\n\
+tell whether or not a slot of given deftemplate has a default value\n\
+returns: one of NO_DEFAULT, STATIC_DEFAULT or DYNAMIC_DEFAULT\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotDefaultP(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    int rv = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    rv = DeftemplateSlotDefaultP(clips_deftemplate_value(p), name);
+    RELEASE_MEMORY_ERROR();
+    RETURN_INT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotDefaultValue */
+static char g_deftemplateSlotDefaultValue__doc__[] = "\
+deftemplateSlotDefaultValue(deftemplate, name) -> (MULTIFIELD, list)\n\
+retrieve default value(s) for a slot of given deftemplate\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotDefaultValue(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotDefaultValue(clips_deftemplate_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotExistP */
+static char g_deftemplateSlotExistP__doc__[] = "\
+deftemplateSlotExistP(deftemplate, name) -> bool\n\
+tell whether or not the given deftemplate has the specified slot\n\
+returns: True if the slot is present, False otherwise\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotExistP(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    int rv = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    rv = DeftemplateSlotExistP(clips_deftemplate_value(p), name);
+    RELEASE_MEMORY_ERROR();
+    RETURN_BOOL(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotMultiP */
+static char g_deftemplateSlotMultiP__doc__[] = "\
+deftemplateSlotMultiP(deftemplate, name) -> bool\n\
+tell whether or not the specified slot of given deftemplate is multifield\n\
+returns: True if it is multifield, False otherwise\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotMultiP(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    int rv = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    rv = DeftemplateSlotMultiP(clips_deftemplate_value(p), name);
+    RELEASE_MEMORY_ERROR();
+    RETURN_BOOL(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotNames */
+static char g_deftemplateSlotNames__doc__[] = "\
+deftemplateSlotNames(deftemplate) -> (MULTIFIELD, list)\n\
+retrieve the names of slots in given deftemplate (special case if implied)\n\
+returns: MULTIFIELD and a list of pairs or a pair (SYMBOL, 'implied')\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect";
+static PyObject *g_deftemplateSlotNames(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotNames(clips_deftemplate_value(p), &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotRange */
+static char g_deftemplateSlotRange__doc__[] = "\
+deftemplateSlotRange(deftemplate, name) -> (MULTIFIELD, list)\n\
+retrieve the numeric range information for a slot of given deftemplate\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotRange(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotRange(clips_deftemplate_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotSingleP */
+static char g_deftemplateSlotSingleP__doc__[] = "\
+deftemplateSlotSingleP(deftemplate, name) -> bool\n\
+tell whether or not the specified slot of given deftemplate is single field\n\
+returns: True if it is single field, False otherwise\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotSingleP(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    int rv = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    rv = DeftemplateSlotSingleP(clips_deftemplate_value(p), name);
+    RELEASE_MEMORY_ERROR();
+    RETURN_BOOL(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* deftemplateSlotTypes */
+static char g_deftemplateSlotTypes__doc__[] = "\
+deftemplateSlotTypes(deftemplate, name) -> (MULTIFIELD, list)\n\
+retrieve names of the data types allowed for a slot of given deftemplate\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_deftemplateSlotTypes(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DeftemplType, &p, &name))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DeftemplateSlotTypes(clips_deftemplate_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+#else
+UNIMPLEMENT_VERSION(deftemplateSlotAllowedValues,
+                    g_deftemplateSlotAllowedValues)
+UNIMPLEMENT_VERSION(deftemplateSlotCardinality,
+                    g_deftemplateSlotCardinality)
+UNIMPLEMENT_VERSION(deftemplateSlotDefaultP,
+                    g_deftemplateSlotDefaultP)
+UNIMPLEMENT_VERSION(deftemplateSlotDefaultValue,
+                    g_deftemplateSlotDefaultValue)
+UNIMPLEMENT_VERSION(deftemplateSlotExistP,
+                    g_deftemplateSlotExistP)
+UNIMPLEMENT_VERSION(deftemplateSlotMultiP,
+                    g_deftemplateSlotMultiP)
+UNIMPLEMENT_VERSION(deftemplateSlotNames,
+                    g_deftemplateSlotNames)
+UNIMPLEMENT_VERSION(deftemplateSlotRange,
+                    g_deftemplateSlotRange)
+UNIMPLEMENT_VERSION(deftemplateSlotSingleP,
+                    g_deftemplateSlotSingleP)
+UNIMPLEMENT_VERSION(deftemplateSlotTypes,
+                    g_deftemplateSlotTypes)
+#endif /* CLIPS_MINOR > 23 */
+
+/* findDeftemplate */
+static char g_findDeftemplate__doc__[] = "\
+findDeftemplate(name) -> deftemplate\n\
+retrieve deftemplate object corresponding to the specified name\n\
+returns: the deftemplate as a new object\n\
+arguments:\n\
+  name (str) - the name of the deftemplate to look for";
+static PyObject *g_findDeftemplate(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDeftemplate(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_deftemplate_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deftemplate_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeftemplateList */
+static char g_getDeftemplateList__doc__[] = "\
+getDeftemplateList([module]) -> (MULTIFIELD, list)\n\
+retrieve list of deftemplate names in specified defmodule\n\
+returns: value MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDeftemplateList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDeftemplateList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeftemplateName */
+static char g_getDeftemplateName__doc__[] = "\
+getDeftemplateName(deftemplate) -> str\n\
+retrieve the name of given deftemplate object\n\
+returns: a string containing the name\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate object";
+static PyObject *g_getDeftemplateName(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDeftemplateName(clips_deftemplate_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP()
+END_FAIL
+}
+
+/* getDeftemplatePPForm */
+static char g_getDeftemplatePPForm__doc__[] = "\
+getDeftemplatePPForm(deftemplate) -> str\n\
+retrieve the pretty-print form of given deftemplate object\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate object";
+static PyObject *g_getDeftemplatePPForm(PyObject *self, PyObject *args) {
+    char *s = NULL;
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDeftemplatePPForm(clips_deftemplate_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP()
+END_FAIL
+}
+
+/* getDeftemplateWatch */
+static char g_getDeftemplateWatch__doc__[] = "\
+getDeftemplateWatch(deftemplate) -> bool\n\
+tell if deftemplate is being watched\n\
+returns: True if the deftemplate is being watched, False otherwise\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate object";
+static PyObject *g_getDeftemplateWatch(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    i = GetDeftemplateWatch(clips_deftemplate_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP()
+END_FAIL
+}
+
+/* getNextDeftemplate */
+static char g_getNextDeftemplate__doc__[] = "\
+getNextDeftemplate([deftemplate]) -> deftemplate\n\
+find next deftemplate in the list, first if argument is omitted\n\
+returns: next deftemplate object, None if already at last deftemplate\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to start from";
+static PyObject *g_getNextDeftemplate(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DeftemplType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDeftemplate(p ? clips_deftemplate_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) RETURN_NONE();
+    clips_deftemplate_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deftemplate_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDeftemplateDeletable */
+static char g_isDeftemplateDeletable__doc__[] = "\
+isDeftemplateDeletable(deftemplate) -> bool\n\
+tell whether or not given deftemplate object can be deleted\n\
+returns: True when deftemplate can be deleted, False otherwise\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate object";
+static PyObject *g_isDeftemplateDeletable(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    i = IsDeftemplateDeletable(clips_deftemplate_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDeftemplates */
+static char g_listDeftemplates__doc__[] = "\
+listDeftemplates(logicalname [, module])\n\
+list deftemplates to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDeftemplates(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDeftemplates(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDeftemplateWatch */
+static char g_setDeftemplateWatch__doc__[] = "\
+setDeftemplateWatch(state, deftemplate)\n\
+set the specified deftemplate to a new watch state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  deftemplate (deftemplate) - the deftemplate object";
+static PyObject *g_setDeftemplateWatch(PyObject *self, PyObject *args) {
+    PyObject *state = NULL;
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DeftemplType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(p);
+    ACQUIRE_MEMORY_ERROR();
+    SetDeftemplateWatch(PyObject_IsTrue(state), clips_deftemplate_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undeftemplate */
+static char g_undeftemplate__doc__[] = "\
+undeftemplate([deftemplate])\n\
+remove a deftemplate or all deftemplates from the system\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate to remove, all if omitted";
+static PyObject *g_undeftemplate(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DeftemplType, &p)) FAIL();
+    CHECK_RM_DEFTEMPLATE(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undeftemplate(p ? clips_deftemplate_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.4 - Fact Functions */
+
+/* assertFact */
+static char g_assertFact__doc__[] = "\
+assertFact(fact) -> fact\n\
+add a fact to the fact list\n\
+returns: the asserted fact as a new object\n\
+arguments:\n\
+  fact (fact) - the fact to assert";
+static PyObject *g_assertFact(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p)) FAIL();
+    CHECK_VALID_FACT(p);
+    /* if fact is read-only, it was previously asserted and can't be reused */
+    if(clips_fact_readonly(p)) {
+        ERROR_CLIPS_REASSERT();
+        FAIL();
+    }
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = Assert(clips_fact_value(p));
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    if(!ptr) {
+        ERROR_CLIPS_ASSERT();
+        FAIL();
+    }
+    REMOVE_JUSTASSERTED_FACT();
+    REMOVE_HASH_FACT(p);
+    /* now the old fact cannot be modified anymore, even on possible failure */
+    clips_fact_readonly(p) = TRUE;
+    clips_fact_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_fact_readonly(q) = TRUE;
+    clips_fact_assign(q, ptr);
+    clips_fact_lock(q);
+    CHECK_VALID_FACT(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* assertString */
+static char g_assertString__doc__[] = "\
+assertString(expr) -> fact\n\
+add a fact to the fact list using a string\n\
+returns: the asserted fact as a new object\n\
+arguments:\n\
+  expr (str) - string containing a list of primitive datatypes";
+static PyObject *g_assertString(PyObject *self, PyObject *args) {
+    char *expr = NULL;
+    clips_FactObject *p = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &expr))
+        FAIL();
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = AssertString(expr);
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    if(!ptr) {
+        ERROR_CLIPS_ASSERT();
+        FAIL();
+    }
+    clips_fact_New(GetCurrentEnvironment(), p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_fact_readonly(p) = TRUE;
+    clips_fact_assign(p, ptr);
+    clips_fact_lock(p);
+    CHECK_VALID_FACT(p);
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* assignFactSlotDefaults */
+static char g_assignFactSlotDefaults__doc__[] = "\
+assignFactSlotDefaults(fact)\n\
+assign default values to the slots of a fact\n\
+arguments:\n\
+  fact (fact) - the fact whose slots are to reset to default values";
+static PyObject *g_assignFactSlotDefaults(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    if(clips_fact_readonly(p)) {
+        ERROR_CLIPS_READONLY();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!AssignFactSlotDefaults(clips_fact_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_OTHER("could not assign default values to fact");
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* createFact */
+static char g_createFact__doc__[] = "\
+createFact(deftemplate) -> fact\n\
+create a new fact object using the provided deftemplate\n\
+returns: a new fact object\n\
+arguments:\n\
+  deftemplate (deftemplate) - the deftemplate defining the fact type";
+static PyObject *g_createFact(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    clips_DeftemplObject *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeftemplType, &q)) FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = CreateFact(clips_deftemplate_value(q));
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_CREATION();
+        FAIL();
+    }
+    clips_fact_New(GetCurrentEnvironment(), p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_fact_assign(p, ptr);
+    clips_fact_lock(p);
+    CHECK_VALID_FACT(p);
+    ADD_NONASSERTED_FACT();
+    APPEND_HASH_FACT(p);
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* decrementFactCount */
+UNIMPLEMENT(decrementFactCount, g_decrementFactCount)
+
+/* factIndex */
+static char g_factIndex__doc__[] = "\
+factIndex(fact) -> int\n\
+retrieve the index of specified fact in fact list\n\
+arguments:\n\
+  fact (fact) - the fact to look for";
+static PyObject *g_factIndex(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    long int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    i = FactIndex(clips_fact_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* facts */
+static char g_facts__doc__[] = "\
+facts(logicalname [, module [, start [, end [, max]]]])\n\
+list facts to the output stream identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule, None for all modules\n\
+  start (int) - first fact, -1 for no restriction\n\
+  end (int) - last fact, -1 for no restriction\n\
+  max (int) - maximum number of facts, -1 for no restriction";
+static PyObject *g_facts(PyObject *self, PyObject *args) {
+    PyObject *module = NULL;
+    char *lname = NULL;
+    int start = -1, end = -1, max = -1;
+
+    if(!PyArg_ParseTuple(args, "s|O!iii", &lname,
+                         &clips_DefmoduleType, &module,
+                         &start, &end, &max))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    Facts(lname,
+          module && module != Py_None ? clips_defmodule_value(module) : NULL,
+          start, end, max);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getFactDuplication */
+STATUS_FUNC_GET_BOOL(getFactDuplication,
+                     g_getFactDuplication,
+                     GetFactDuplication)
+
+/* getFactListChanged */
+STATUS_FUNC_GET_BOOL(getFactListChanged,
+                     g_getFactListChanged,
+                     GetFactListChanged)
+
+/* getFactPPForm */
+static char g_getFactPPForm__doc__[] = "\
+getFactPPForm(fact) -> str\n\
+retrieve the pretty-print form of given fact\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  fact (fact) - the fact object to inspect";
+static PyObject *g_getFactPPForm(PyObject *self, PyObject *args) {
+    char *buffer = NEW_ARRAY(char, ppbuffer_size);
+    clips_FactObject *p = NULL;
+    PyObject *rv = NULL;
+
+    if(!buffer) {
+        ERROR_MEMORY("cannot allocate buffer");
+        FAIL();
+    }
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetFactPPForm(buffer, ppbuffer_size-1, clips_fact_value(p));
+    RELEASE_MEMORY_ERROR();
+    rv = Py_BuildValue("s", buffer);
+    DELETE(buffer);
+    return rv;
+
+BEGIN_FAIL
+    if(buffer) DELETE(buffer);
+    SKIP();
+END_FAIL
+}
+
+/* getFactSlot */
+static char g_getFactSlot__doc__[] = "\
+getFactSlot(fact [, slotname]) -> (type, value)\n\
+get the slot value for the specified fact given the slot name\n\
+returns: a value or a multifield in the form (type, return value)\n\
+arguments:\n\
+  fact (fact) - the fact to inspect\n\
+  slotname (str) - the name of the slot to retrieve, should be omitted\n\
+                   for the implied multifield slot of an implied\n\
+                   deftemplate";
+static PyObject *g_getFactSlot(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    char *slotname = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!|s", &clips_FactType, &p, &slotname))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    /* we make some considerations about this call, to avoid nasty errors */
+    /* check that the slot name can be really omitted (see docstring) */
+    if(!slotname && !
+        ((struct deftemplate *)
+            ((struct fact *)clips_fact_value(p))->whichDeftemplate
+        )->implied) {
+            ERROR_VALUE("cannot omit slot name using this fact");
+            FAIL();
+        }
+    /* end of considerations */
+    ACQUIRE_MEMORY_ERROR();
+    if(!GetFactSlot(clips_fact_value(p), slotname, &o)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    Py_XDECREF(rv);
+END_FAIL
+}
+
+/* getNextFact */
+static char g_getNextFact__doc__[] = "\
+getNextFact([fact]) -> fact\n\
+retrieve next fact object, first if argument is omitted\n\
+returns: a fact object, None if already at last fact\n\
+arguments:\n\
+  fact (fact) - the fact to start from";
+static PyObject *g_getNextFact(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_FactType, &p))
+        FAIL();
+    if(p)
+        CHECK_VALID_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextFact(p ? clips_fact_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_fact_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_fact_readonly(q) = TRUE;
+    clips_fact_assign(q, ptr);
+    clips_fact_lock(q);
+    CHECK_VALID_FACT(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* 4.4.12a - getNextFactInTemplate */
+static char g_getNextFactInTemplate__doc__[] = "\
+getNextFactInTemplate(deftemplate [, fact]) -> fact\n\
+retrieve next fact object for a deftemplate, first if fact is omitted\n\
+returns: a fact object, None if already at last fact\n\
+arguments:\n\
+  deftemplate (deftemplate) - the template to find facts of\n\
+  fact (fact) - the fact to start from";
+static PyObject *g_getNextFactInTemplate(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL, *q = NULL;
+    clips_DeftemplObject *t = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!|O!",
+                         &clips_DeftemplType, &t, &clips_FactType, &p))
+        FAIL();
+    CHECK_DEFTEMPLATE(t);
+    if(p)
+        CHECK_VALID_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextFactInTemplate(
+        clips_deftemplate_value(t), p ? clips_fact_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_fact_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_fact_readonly(q) = TRUE;
+    clips_fact_assign(q, ptr);
+    clips_fact_lock(q);
+    CHECK_VALID_FACT(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* incrementFactCount */
+UNIMPLEMENT(incrementFactCount, g_incrementFactCount)
+
+/* loadFacts */
+static char g_loadFacts__doc__[] = "\
+loadFacts(filename)\n\
+load facts from specified file\n\
+arguments:\n\
+  filename (str) - the name of file to load facts from";
+static PyObject *g_loadFacts(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!LoadFacts(fn)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+#if CLIPS_MINOR > 23
+
+/* ppFact */
+static char g_ppFact__doc__[] = "\
+ppFact(fact, output [, ignoredefault])\n\
+write the pretty-print form of given fact to logical output\n\
+arguments:\n\
+  fact (fact) - the fact to write\n\
+  output (str) - logical name of stream to output to\n\
+  ignoredefault (bool) - True to skip slots whose values equal defaults";
+static PyObject *g_ppFact(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    char *s = NULL;
+    PyObject *o = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s|O", &clips_FactType, &p, &s, &o))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    PPFact(clips_fact_value(p), s, o ? PyObject_IsTrue(o) : FALSE);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+#else
+UNIMPLEMENT_VERSION(ppFact, g_ppFact)
+#endif /* CLIPS_MINOR > 23 */
+
+/* putFactSlot */
+static char g_putFactSlot__doc__[] = "\
+putFactSlot(fact, name, value)\n\
+changes the value of specified slot in given fact\n\
+arguments:\n\
+  fact (fact) - the fact to change: must have been created with createFact\n\
+  name (str) - the name of the slot to change\n\
+  value (pair) - a pair (type, value) containing the value to assign";
+static PyObject *g_putFactSlot(PyObject *self, PyObject *args) {
+    DATA_OBJECT o = { 0 };
+    clips_FactObject *f = NULL;
+    PyObject *p = NULL;
+    char *s;
+
+    /* note that function i_py2do checks for last argument validity */
+    if(!PyArg_ParseTuple(args, "O!sO", &clips_FactType, &f, &s, &p))
+        FAIL();
+    CHECK_VALID_FACT(f);
+    CHECK_LOST_FACT(f);
+    if(clips_fact_readonly(f)) {
+        ERROR_CLIPS_READONLY();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!i_py2do(p, &o)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    if(!PutFactSlot(clips_fact_value(f), s, &o)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_OTHER("fact slot could not be modified");
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* retract */
+static char g_retract__doc__[] = "\
+retract(fact)\n\
+retract provided fact\n\
+arguments:\n\
+  fact (fact) - the fact to retract";
+static PyObject *g_retract(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    clips_fact_lock(p);
+    /* if the fact was actually asserted it must now be read-only */
+    if(!clips_fact_readonly(p)) {
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!Retract(clips_fact_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* saveFacts */
+static char g_saveFacts__doc__[] = "\
+saveFacts(filename, scope)\n\
+save the facts in the specified scope\n\
+arguments:\n\
+  filename (str) - the name of the file to save to\n\
+  scope (int) - can be one of LOCAL_SAVE or VISIBLE_SAVE";
+static PyObject *g_saveFacts(PyObject *self, PyObject *args) {
+    int scope = 0;
+    char *fn = NULL;
+
+    if(!PyArg_ParseTuple(args, "si", &fn, &scope))
+        FAIL();
+    if(scope != LOCAL_SAVE && scope != VISIBLE_SAVE) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!SaveFacts(fn, scope, NULL)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setFactDuplication */
+STATUS_FUNC_SET_BOOL(setFactDuplication,
+                     g_setFactDuplication,
+                     SetFactDuplication)
+
+/* setFactListChanged */
+STATUS_FUNC_SET_BOOL(setFactListChanged,
+                     g_setFactListChanged,
+                     SetFactListChanged)
+
+/* factDeftemplate */
+static char g_factDeftemplate__doc__[] = "\
+factDeftemplate(fact) -> deftemplate\n\
+return the deftemplate associated with a particular fact\n\
+returns: a deftemplate object, None if no deftemplate associated\n\
+arguments:\n\
+  fact (fact) - the fact to examine";
+static PyObject *g_factDeftemplate(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    clips_DeftemplObject *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FactDeftemplate(clips_fact_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!ptr || !deftemplateExists(ptr))
+        RETURN_NONE();
+    clips_deftemplate_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deftemplate_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* factExistp */
+static char g_factExistp__doc__[] = "\
+factExistp(fact) -> bool\n\
+tell whether a fact is in the list or has been retracted\n\
+returns: True if the fact exixts, False if it was retracted\n\
+arguments:\n\
+  fact (fact) - the fact to check";
+static PyObject *g_factExistp(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    i = FactExistp(clips_fact_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* factSlotNames */
+static char g_factSlotNames__doc__[] = "\
+factSlotNames(fact) -> (MULTIFIELD, list)\n\
+get the slot names for the specified fact\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  fact (fact) - the fact to inspect";
+static PyObject *g_factSlotNames(PyObject *self, PyObject *args) {
+    clips_FactObject *p = NULL;
+    PyObject *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
+        FAIL();
+    CHECK_VALID_FACT(p);
+    CHECK_LOST_FACT(p);
+    ACQUIRE_MEMORY_ERROR();
+    FactSlotNames(clips_fact_value(p), &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getFactList */
+static char g_getFactList__doc__[] = "\
+getFactList([module]) -> (type, list)\n\
+retrieve list of fact identifiers in specified defmodule\n\
+returns:  MULTIFIELD and a list of pairs (STRING, identifier)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getFactList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetFactList(&o, module ? clips_defmodule_value(module) : NULL);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* loadFactsFromString */
+static char g_loadFactsFromString__doc__[] = "\
+loadFactsFromString(str)\n\
+load facts from specified string into the fact list\n\
+arguments:\n\
+  string (str) - string to load facts from";
+static PyObject *g_loadFactsFromString(PyObject *self, PyObject *args) {
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &s))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!LoadFactsFromString(s, -1)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_PARSEX();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.5 - Deffacts functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *deffactsExists(void *ptr) {
+	void *rv = GetNextDeffacts(NULL);
+	while(rv != NULL) {
+		if(rv == ptr) return rv;
+		else rv = GetNextDeffacts(rv);
+	}
+	return NULL;
+}
+#define PYDEFFACTS_EXISTS(_p) deffactsExists(clips_deffacts_value(_p))
+#define CHECK_DEFFACTS(_p) do { \
+        if(!PYDEFFACTS_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFFACTS(_p) do { \
+        if(_p && !PYDEFFACTS_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* deffactsModule */
+static char g_deffactsModule__doc__[] = "\
+deffactsModule(deffacts) -> str\n\
+retrieve the module where the specified deffacts object is defined\n\
+returns: the module name\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts object to inspect";
+static PyObject *g_deffactsModule(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffactsType, &p))
+        FAIL();
+    CHECK_DEFFACTS(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = DeffactsModule(clips_deffacts_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDeffacts */
+static char g_findDeffacts__doc__[] = "\
+findDeffacts(name) -> deffacts\n\
+find the deffacts object whose name is specified\n\
+returns: the deffacts as a new object\n\
+arguments:\n\
+  name (str) - the name of the deffacts to look for";
+static PyObject *g_findDeffacts(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DeffactsObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDeffacts(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_deffacts_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deffacts_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeffactsList */
+static char g_getDeffactsList__doc__[] = "\
+getDeffactsList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of deffacts in specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDeffactsList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDeffactsList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeffactsName */
+static char g_getDeffactsName__doc__[] = "\
+getDeffactsName(deffacts) -> str\n\
+retrieve the name of deffacts object\n\
+returns: the deffacts name\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts to inspect";
+static PyObject *g_getDeffactsName(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffactsType, &p))
+        FAIL();
+    CHECK_DEFFACTS(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDeffactsName(clips_deffacts_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDeffactsPPForm */
+static char g_getDeffactsPPForm__doc__[] = "\
+getDeffactsPPForm(deffacts) -> str\n\
+retrieve the pretty-print form of deffacts object\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts to inspect";
+static PyObject *g_getDeffactsPPForm(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffactsType, &p))
+        FAIL();
+    CHECK_DEFFACTS(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDeffactsPPForm(clips_deffacts_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDeffacts */
+static char g_getNextDeffacts__doc__[] = "\
+getNextDeffacts([deffacts]) -> deffacts\n\
+retrieve next deffacts object in list, first if argument is omitted\n\
+returns: a deffacts object, None if already at last deffacts\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts to start from";
+static PyObject *g_getNextDeffacts(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DeffactsType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFFACTS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDeffacts(p ? clips_deffacts_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) RETURN_NONE();
+    clips_deffacts_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deffacts_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDeffactsDeletable */
+static char g_isDeffactsDeletable__doc__[] = "\
+isDeffactsDeletable(deffacts) -> bool\n\
+tell whether or not given deffacts object can be deleted\n\
+returns: True when deffacts can be deleted, False otherwise\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts object";
+static PyObject *g_isDeffactsDeletable(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffactsType, &p))
+        FAIL();
+    CHECK_DEFFACTS(p);
+    i = IsDeffactsDeletable(clips_deffacts_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDeffacts */
+static char g_listDeffacts__doc__[] = "\
+listDeffacts(output [, module])\n\
+list deffacts objects in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDeffacts(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &s, &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDeffacts(s, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undeffacts */
+static char g_undeffacts__doc__[] = "\
+undeffacts([deffacts])\n\
+delete a deffacts object or all deffacts objects\n\
+arguments:\n\
+  deffacts (deffacts) - the deffacts to be deleted, all if omitted";
+static PyObject *g_undeffacts(PyObject *self, PyObject *args) {
+    clips_DeffactsObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffactsType, &p))
+        FAIL();
+    CHECK_RM_DEFFACTS(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undeffacts(p ? clips_deffacts_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.6 - Defrule functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *defruleExists(void *ptr) {
+    void *rv = GetNextDefrule(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDefrule(rv);
+    }
+    return NULL;
+}
+#define PYDEFRULE_EXISTS(_p) defruleExists(clips_defrule_value(_p))
+#define CHECK_DEFRULE(_p) do { \
+        if(!PYDEFRULE_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFRULE(_p) do { \
+        if(_p && !PYDEFRULE_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* defruleHasBreakpoint */
+static char g_defruleHasBreakpoint__doc__[] = "\
+defruleHasBreakpoint(defrule) -> bool\n\
+test whether or not the given defrule has a breakpoint\n\
+returns: True if the defrule has a breakpoint, False otherwise\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_defruleHasBreakpoint(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    i = DefruleHasBreakpoint(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* defruleModule */
+static char g_defruleModule__doc__[] = "\
+defruleModule(defrule) -> str\n\
+retrieve the module where the defrule is defined\n\
+returns: the requested name of module\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_defruleModule(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = DefruleModule(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDefrule */
+static char g_findDefrule__doc__[] = "\
+findDefrule(name) -> defrule\n\
+find the defrule with the specified name\n\
+returns: the defrule as a new object\n\
+arguments:\n\
+  name (str) - the name of defrule to look for";
+static PyObject *g_findDefrule(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    clips_DefruleObject *p = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefrule(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    clips_defrule_New(p);
+    clips_defrule_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefruleList */
+static char g_getDefruleList__doc__[] = "\
+getDefruleList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of defrule objects in the specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDefruleList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDefruleList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefruleName */
+static char g_getDefruleName__doc__[] = "\
+getDefruleName(defrule) -> str\n\
+retrieve the name of specified defrule\n\
+returns: a string containing the defrule name\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_getDefruleName(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefruleName(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefrulePPForm */
+static char g_getDefrulePPForm__doc__[] = "\
+getDefrulePPForm(defrule) -> str\n\
+retrieve the pretty-print form of specified defrule\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_getDefrulePPForm(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefrulePPForm(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefruleWatchActivations */
+static char g_getDefruleWatchActivations__doc__[] = "\
+getDefruleWatchActivations(defrule) -> bool\n\
+tell whether the specified defrule is watched for activations\n\
+returns: True if activations are watched, False otherwise\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_getDefruleWatchActivations(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    i = GetDefruleWatchActivations(clips_defrule_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefruleWatchFirings */
+static char g_getDefruleWatchFirings__doc__[] = "\
+getDefruleWatchFirings(defrule) -> bool\n\
+tell whether the specified defrule is watched for firings\n\
+returns: True if rule firings are watched, False otherwise\n\
+arguments:\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_getDefruleWatchFirings(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    i = GetDefruleWatchFirings(clips_defrule_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getIncrementalReset */
+STATUS_FUNC_GET_BOOL(getIncrementalReset,
+                     g_getIncrementalReset,
+                     GetIncrementalReset)
+
+/* getNextDefrule */
+static char g_getNextDefrule__doc__[] = "\
+getNextDefrule([defrule]) -> defrule\n\
+retrieve next defrule object in list, first if argument is omitted\n\
+returns: a defrule object, None if already at last defrule\n\
+arguments:\n\
+  defrule (defrule) - the defrule to start from";
+static PyObject *g_getNextDefrule(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefruleType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefrule(p ? clips_defrule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_defrule_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defrule_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDefruleDeletable */
+static char g_isDefruleDeletable__doc__[] = "\
+isDefruleDeletable(defrule) -> bool\n\
+tell whether or not given defrule object can be deleted\n\
+returns: True when defrule can be deleted, False otherwise\n\
+arguments:\n\
+  defrule (defrule) - the defrule object";
+static PyObject *g_isDefruleDeletable(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    i = IsDefruleDeletable(clips_defrule_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefrules */
+static char g_listDefrules__doc__[] = "\
+listDefrules(output [, module])\n\
+list defrule objects in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDefrules(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &s, &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefrules(s, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* matches */
+static char g_matches__doc__[] = "\
+matches(output, defrule)\n\
+list defrule partial matches\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  defrule (defrule) - the defrule to inspect";
+static PyObject *g_matches(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO!", &s, &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    if(!Matches_PY(s, clips_defrule_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* refresh */
+static char g_refresh__doc__[] = "\
+refresh(defrule)\n\
+refresh a defrule\n\
+arguments:\n\
+  defrule (defrule) - the defrule to refresh";
+static PyObject *g_refresh(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    if(!Refresh(clips_defrule_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* removeBreak */
+static char g_removeBreak__doc__[] = "\
+removeBreak(defrule)\n\
+remove the breakpoint from a defrule\n\
+arguments:\n\
+  defrule (defrule) - the defrule to access";
+static PyObject *g_removeBreak(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    if(!RemoveBreak(clips_defrule_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setBreak */
+static char g_setBreak__doc__[] = "\
+setBreak(defrule)\n\
+set a breakpoint to a defrule\n\
+arguments:\n\
+  defrule (defrule) - the defrule to access";
+static PyObject *g_setBreak(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    ACQUIRE_MEMORY_ERROR();
+    SetBreak(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefruleWatchActivations */
+static char g_setDefruleWatchActivations__doc__[] = "\
+setDefruleWatchActivations(state, defrule)\n\
+set activations watch of a defrule to a new state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defrule (defrule) - the defrule to access";
+static PyObject *g_setDefruleWatchActivations(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    PyObject *state = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    SetDefruleWatchActivations(
+        PyObject_IsTrue(state), clips_defrule_value(p));
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefruleWatchFirings */
+static char g_setDefruleWatchFirings__doc__[] = "\
+setDefruleWatchFirings(state, defrule)\n\
+set firings watch of a defrule to a new state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defrule (defrule) - the defrule to access";
+static PyObject *g_setDefruleWatchFirings(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+    PyObject *state = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefruleType, &p))
+        FAIL();
+    CHECK_DEFRULE(p);
+    SetDefruleWatchFirings(PyObject_IsTrue(state), clips_defrule_value(p));
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setIncrementalReset */
+STATUS_FUNC_SET_BOOL(setIncrementalReset,
+                     g_setIncrementalReset,
+                     SetIncrementalReset)
+
+/* showBreaks */
+static char g_showBreaks__doc__[] = "\
+showBreaks(output [, module])\n\
+list breakpoints in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_showBreaks(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &s, &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ShowBreaks(s, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefrule */
+static char g_undefrule__doc__[] = "\
+undefrule([defrule])\n\
+delete a defrule object or all defrule objects\n\
+arguments:\n\
+  defrule (defrule) - the defrule to be deleted, all if omitted";
+static PyObject *g_undefrule(PyObject *self, PyObject *args) {
+    clips_DefruleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefruleType, &p)) FAIL();
+    CHECK_RM_DEFRULE(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefrule(p ? clips_defrule_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.7 - Agenda Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *activationExists(void *ptr) {
+    void *rv = GetNextActivation(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextActivation(rv);
+    }
+    return NULL;
+}
+#define PYACTIVATION_EXISTS(_p) activationExists(clips_activation_value(_p))
+#define CHECK_ACTIVATION(_p) do { \
+        if(!PYACTIVATION_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_ACTIVATION(_p) do { \
+        if(_p && !PYACTIVATION_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* addRunFunction */
+UNIMPLEMENT(addRunFunction, g_addRunFunction)
+
+/* agenda */
+static char g_agenda__doc__[] = "\
+agenda(output [, module])\n\
+list agenda rules in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_agenda(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+    void *env = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &s, &clips_DefmoduleType, &p))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    EnvAgenda(env, s, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* clearFocusStack */
+FUNC_VOID_ONLY(clearFocusStack, g_clearFocusStack, ClearFocusStack)
+
+/* deleteActivation */
+static char g_deleteActivation__doc__[] = "\
+deleteActivation(activation)\n\
+remove activation from agenda\n\
+arguments:\n\
+  activation (activation) - the activation to delete";
+static PyObject *g_deleteActivation(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_ActivationType, &p))
+        FAIL();
+    CHECK_RM_ACTIVATION(p);
+    ACQUIRE_MEMORY_ERROR();
+    if(!DeleteActivation(p ? clips_activation_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* focus */
+static char g_focus__doc__[] = "\
+focus(module)\n\
+set current focus\n\
+arguments:\n\
+  module (defmodule) - the defmodule to set focus to";
+static PyObject *g_focus(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    Focus(clips_defmodule_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getActivationName */
+static char g_getActivationName__doc__[] = "\
+getActivationName(activation) -> str\n\
+retrieve the name of specified activation\n\
+returns: name as a string\n\
+arguments:\n\
+  activation (activation) - the activation to inspect";
+static PyObject *g_getActivationName(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_ActivationType, &p))
+        FAIL();
+    CHECK_ACTIVATION(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetActivationName(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getActivationPPForm */
+static char g_getActivationPPForm__doc__[] = "\
+getActivationPPForm(activation) -> str\n\
+retrieve the pretty-print form of specified activation\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  activation (activation) - the activation to inspect";
+static PyObject *g_getActivationPPForm(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL;
+    char *buffer = NEW_ARRAY(char, ppbuffer_size);
+    PyObject *rv = NULL;
+
+    if(!buffer) {
+        ERROR_MEMORY("cannot allocate buffer");
+        FAIL();
+    }
+    if(!PyArg_ParseTuple(args, "O!", &clips_ActivationType, &p))
+        FAIL();
+    CHECK_ACTIVATION(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetActivationPPForm(buffer, ppbuffer_size-1, clips_activation_value(p));
+    RELEASE_MEMORY_ERROR();
+    rv = Py_BuildValue("s", buffer);
+    DELETE(buffer);
+    return rv;
+
+BEGIN_FAIL
+    if(buffer) DELETE(buffer);
+    SKIP();
+END_FAIL
+}
+
+/* getActivationSalience */
+static char g_getActivationSalience__doc__[] = "\
+getActivationSalience(activation) -> int\n\
+retrieve the salience value of specified activation\n\
+returns: salience as integer\n\
+arguments:\n\
+  activation (activation) - the activation to inspect";
+static PyObject *g_getActivationSalience(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_ActivationType, &p))
+        FAIL();
+    CHECK_ACTIVATION(p);
+    ACQUIRE_MEMORY_ERROR();
+    i = GetActivationSalience(clips_defrule_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getAgendaChanged */
+STATUS_FUNC_GET_BOOL(getAgendaChanged, g_getAgendaChanged, GetAgendaChanged)
+
+/* getFocus */
+static char g_getFocus__doc__[] = "\
+getFocus() -> defmodule\n\
+retrieve the module with associated focus\n\
+returns: the defmodule with focus as a new object";
+static PyObject *g_getFocus(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    void *ptr = NULL;
+
+    CHECK_NOARGS(args);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetFocus();
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    clips_defmodule_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defmodule_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getFocusStack */
+static char g_getFocusStack__doc__[] = "\
+getFocusStack() -> (MULTIFIELD, list)\n\
+retrieve the module names in the focus stack\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)";
+static PyObject *g_getFocusStack(PyObject *self, PyObject *args) {
+    DATA_OBJECT o = { 0 };
+    PyObject *p = NULL;
+    void *env = NULL;
+
+    CHECK_NOARGS(args);
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    EnvGetFocusStack(env, &o);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getNextActivation */
+static char g_getNextActivation__doc__[] = "\
+getNextActivation([activation]) -> activation\n\
+retrieve next activation object in list, first if argument is omitted\n\
+returns: an activation object, None if already at last activation\n\
+arguments:\n\
+  activation (activation) - the activation to start from";
+static PyObject *g_getNextActivation(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_ActivationType, &p))
+        FAIL();
+    if(p) { CHECK_ACTIVATION(p); }
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextActivation(p ? clips_activation_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_activation_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_activation_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getSalienceEvaluation */
+STATUS_FUNC_GET(getSalienceEvaluation,
+                g_getSalienceEvaluation,
+                GetSalienceEvaluation,
+                "i")
+
+/* getStrategy */
+FUNC_GET_ONLY(getStrategy, g_getStrategy, GetStrategy, "i")
+
+/* listFocusStack */
+static char g_listFocusStack__doc__[] = "\
+listFocusStack(output)\n\
+print current focus stack\n\
+arguments:\n\
+  output (str) - logical name of output stream";
+static PyObject *g_listFocusStack(PyObject *self, PyObject *args) {
+    char *output = NULL;
+    void *env = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &output))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    EnvListFocusStack(env, output);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* popFocus */
+FUNC_VOID_ONLY(popFocus, g_popFocus, PopFocus)
+
+/* refreshAgenda */
+static char g_refreshAgenda__doc__[] = "\
+refreshAgenda([module])\n\
+refresh agenda for specified defmodule\n\
+arguments:\n\
+  module (defmodule) - the defmodule to process, all if omitted";
+static PyObject *g_refreshAgenda(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    void *env = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    EnvRefreshAgenda(env, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* removeRunFunction */
+UNIMPLEMENT(removeRunFunction, g_removeRunFunction)
+
+/* reorderAgenda */
+static char g_reorderAgenda__doc__[] = "\
+reorderAgenda([module])\n\
+reorder agenda for specified defmodule\n\
+arguments:\n\
+  module (defmodule) - the defmodule to process, all if omitted";
+static PyObject *g_reorderAgenda(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    void *env = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    EnvReorderAgenda(env, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* run */
+static char g_run__doc__[] = "\
+run([limit]) -> fired\n\
+execute rules\n\
+returns: the number of fired rules\n\
+arguments:\n\
+  limit (int) - number of rules to fire, all if omitted";
+static PyObject *g_run(PyObject *self, PyObject *args) {
+    long runlimit = -1;
+
+    if(!PyArg_ParseTuple(args, "|i", &runlimit))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    runlimit = Run(runlimit);
+    RELEASE_MEMORY_ERROR();
+    RETURN_INT(runlimit);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setActivationSalience */
+static char g_setActivationSalience__doc__[] = "\
+setActivationSalience(activation, salience) -> int\n\
+set the new activation salience\n\
+returns: the old value\n\
+arguments:\n\
+  activation (activation) - an activation object\n\
+  salience (int) - the new activation salience";
+static PyObject *g_setActivationSalience(PyObject *self, PyObject *args) {
+    clips_ActivationObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i", &clips_ActivationType, &p, &i))
+        FAIL();
+    CHECK_ACTIVATION(p);
+    ACQUIRE_MEMORY_ERROR();
+    i = SetActivationSalience(clips_activation_value(p), i);
+    RELEASE_MEMORY_ERROR();
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setAgendaChanged */
+STATUS_FUNC_SET_BOOL(setAgendaChanged, g_setAgendaChanged, SetAgendaChanged)
+
+/* setSalienceEvaluation */
+static char g_setSalienceEvaluation__doc__[] = "\
+setSalienceEvaluation(mode)\n\
+set the new salience evaluation mode\n\
+arguments:\n\
+  mode (int) - the new evaluation mode";
+static PyObject *g_setSalienceEvaluation(PyObject *self, PyObject *args) {
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "i", &i))
+        FAIL();
+    if(i != WHEN_DEFINED && i != WHEN_ACTIVATED && i != EVERY_CYCLE) {
+        ERROR_VALUE("invalid evaluation mode");
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    SetSalienceEvaluation(i);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setStrategy */
+static char g_setStrategy__doc__[] = "\
+setStrategy(mode)\n\
+set the new strategy\n\
+arguments:\n\
+  strategy (int) - the new strategy";
+static PyObject *g_setStrategy(PyObject *self, PyObject *args) {
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "i", &i)) FAIL();
+    if(i != DEPTH_STRATEGY && i != BREADTH_STRATEGY && i != LEX_STRATEGY &&
+       i != MEA_STRATEGY && i != COMPLEXITY_STRATEGY &&
+       i != SIMPLICITY_STRATEGY && i != RANDOM_STRATEGY) {
+        ERROR_VALUE("invalid strategy");
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    SetStrategy(i);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.8 Defglobal Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *defglobalExists(void *ptr) {
+    void *rv = GetNextDefglobal(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDefglobal(rv);
+    }
+    return NULL;
+}
+#define PYDEFGLOBAL_EXISTS(_p) defglobalExists(clips_defglobal_value(_p))
+#define CHECK_DEFGLOBAL(_p) do { \
+        if(!PYDEFGLOBAL_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFGLOBAL(_p) do { \
+        if(_p && !PYDEFGLOBAL_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* defglobalModule */
+static char g_defglobalModule__doc__[] = "\
+defglobalModule(defglobal) -> str\n\
+retrieve the module name where specified defglobal is defined\n\
+returns: module name as string\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to inspect";
+static PyObject *g_defglobalModule(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    char *module = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    ACQUIRE_MEMORY_ERROR();
+    module = DefglobalModule(clips_defglobal_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!module) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    return Py_BuildValue("s", module);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDefglobal */
+static char g_findDefglobal__doc__[] = "\
+findDefglobal(name) -> defglobal\n\
+return the defglobal object associated with name\n\
+returns: the defglobal as a new object\n\
+arguments:\n\
+  name (str) - the name to look for";
+static PyObject *g_findDefglobal(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DefglobalObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefglobal(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_defglobal_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defglobal_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefglobalList */
+static char g_getDefglobalList__doc__[] = "\
+getDefglobalList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of defglobal objects in the specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDefglobalList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDefglobalList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefglobalName */
+static char g_getDefglobalName__doc__[] = "\
+getDefglobalName(defglobal) -> str\n\
+retrieve the name of specified defglobal\n\
+returns: name as a string\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to inspect";
+static PyObject *g_getDefglobalName(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    name = GetDefglobalName(clips_defglobal_value(p));
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefglobalPPForm */
+static char g_getDefglobalPPForm__doc__[] = "\
+getDefglobalPPForm(defglobal) -> str\n\
+retrieve the pretty-print form of specified defglobal\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to inspect";
+static PyObject *g_getDefglobalPPForm(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefglobalPPForm(clips_defglobal_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefglobalValue */
+static char g_getDefglobalValue__doc__[] = "\
+getDefglobalValue(name) -> (type, value)\n\
+retrieve the value of specified defglobal\n\
+returns: value as a pair (type, value)\n\
+arguments:\n\
+  name (str) - the name of the defglobal";
+static PyObject *g_getDefglobalValue(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+    void *env = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    if(!EnvGetDefglobalValue(env, name, &o)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefglobalValueForm */
+static char g_getDefglobalValueForm__doc__[] = "\
+getDefglobalValueForm(defglobal) -> str\n\
+retrieve the pretty-print form of specified defglobal\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to inspect";
+static PyObject *g_getDefglobalValueForm(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    char *buffer = NEW_ARRAY(char, ppbuffer_size);
+    PyObject *rv = NULL;
+
+    if(!buffer) {
+        ERROR_MEMORY("cannot allocate buffer");
+        FAIL();
+    }
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetDefglobalValueForm(buffer, ppbuffer_size-1, clips_defglobal_value(p));
+    RELEASE_MEMORY_ERROR();
+    rv = Py_BuildValue("s", buffer);
+    DELETE(buffer);
+    return rv;
+
+BEGIN_FAIL
+    if(buffer) DELETE(buffer);
+    SKIP();
+END_FAIL
+}
+
+/* getDefglobalWatch */
+static char g_getDefglobalWatch__doc__[] = "\
+getDefglobalWatch(defglobal) -> bool\n\
+tell whether or not the defglobal is being watched\n\
+returns: True if the defglobal is being watched, False otherwise\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to inspect";
+static PyObject *g_getDefglobalWatch(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    i = GetDefglobalWatch(clips_defglobal_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getGlobalsChanged */
+STATUS_FUNC_GET_BOOL(getGlobalsChanged, g_getGlobalsChanged, GetGlobalsChanged)
+
+/* getNextDefglobal */
+static char g_getNextDefglobal__doc__[] = "\
+getNextDefglobal([defglobal]) -> defglobal\n\
+retrieve next defglobal object in list, first if argument is omitted\n\
+returns: a defglobal object, None if already at last defglobal\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to start from";
+static PyObject *g_getNextDefglobal(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefglobalType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFGLOBAL(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefglobal(p ? clips_defglobal_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_defglobal_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defglobal_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getResetGlobals */
+STATUS_FUNC_GET_BOOL(getResetGlobals, g_getResetGlobals, GetResetGlobals)
+
+/* isDefglobalDeletable */
+static char g_isDefglobalDeletable__doc__[] = "\
+isDefglobalDeletable(defglobal) -> bool\n\
+tell whether or not the defglobal is deletable\n\
+returns: True if the defglobal can be deleted, False otherwise\n\
+arguments:\n\
+  defglobal (defglobal) - the defglobal to be inspected";
+static PyObject *g_isDefglobalDeletable(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    i = IsDefglobalDeletable(clips_defglobal_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefglobals */
+static char g_listDefglobals__doc__[] = "\
+listDefglobals(logicalname [, module])\n\
+list defglobals to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDefglobals(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefglobals(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefglobalValue */
+static char g_setDefglobalValue__doc__[] = "\
+setDefglobalValue(name, value)\n\
+set the value of passed in defglobal\n\
+arguments:\n\
+  name (str) - the name of defglobal to change\n\
+  value (pair) - a pair (type, value)";
+static PyObject *g_setDefglobalValue(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "sO", &name, &p))
+        FAIL();
+    if(!i_py2do(p, &o)) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!SetDefglobalValue(name, &o)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    Py_XDECREF(p);
+    RETURN_NONE();
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* setDefglobalWatch */
+static char g_setDefglobalWatch__doc__[] = "\
+setDefglobalWatch(state, defglobal)\n\
+set the specified defglobal to a particular watch state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defglobal (defglobal) - the defglobal object";
+static PyObject *g_setDefglobalWatch(PyObject *self, PyObject *args) {
+    PyObject *state = NULL;
+    clips_DefglobalObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_DEFGLOBAL(p);
+    SetDefglobalWatch(PyObject_IsTrue(state), clips_defglobal_value(p));
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setGlobalsChanged */
+STATUS_FUNC_SET_BOOL(setGlobalsChanged, g_setGlobalsChanged, SetGlobalsChanged)
+
+/* setResetGlobals */
+STATUS_FUNC_SET_BOOL(setResetGlobals, g_setResetGlobals, SetResetGlobals)
+
+/* showDefglobals */
+static char g_showDefglobals__doc__[] = "\
+showDefglobals(output [, module])\n\
+list defglobals in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - logical name of stream to output to\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_showDefglobals(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &s, &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ShowDefglobals(s, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefglobal */
+static char g_undefglobal__doc__[] = "\
+undefglobal([defglobal])\n\
+delete a defglobal object or all defglobal objects\n\
+arguments:\n\
+  defglobal (defglobal) - object to be deleted, all if omitted";
+static PyObject *g_undefglobal(PyObject *self, PyObject *args) {
+    clips_DefglobalObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefglobalType, &p))
+        FAIL();
+    CHECK_RM_DEFGLOBAL(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefglobal(p ? clips_defglobal_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.9 Deffunction Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *deffunctionExists(void *ptr) {
+    void *rv = GetNextDeffunction(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDeffunction(rv);
+    }
+    return NULL;
+}
+#define PYDEFFUNCTION_EXISTS(_p) deffunctionExists(clips_deffunction_value(_p))
+#define CHECK_DEFFUNCTION(_p) do { \
+        if(!PYDEFFUNCTION_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFFUNCTION(_p) do { \
+        if(_p && !PYDEFFUNCTION_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* deffunctionModule */
+static char g_deffunctionModule__doc__[] = "\
+deffunctionModule(deffunction) -> str\n\
+retrieve the module name where specified deffunction is defined\n\
+returns: module name as string\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to inspect";
+static PyObject *g_deffunctionModule(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+    char *module = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_DEFFUNCTION(p);
+    ACQUIRE_MEMORY_ERROR();
+    module = DeffunctionModule(clips_deffunction_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!module) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    return Py_BuildValue("s", module);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDeffunction */
+static char g_findDeffunction__doc__[] = "\
+findDeffunction(name) -> deffunction\n\
+return the deffunction object associated with name\n\
+returns: the deffunction as a new object\n\
+arguments:\n\
+  name (str) - the name to look for";
+static PyObject *g_findDeffunction(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DeffunctionObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDeffunction(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_deffunction_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deffunction_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeffunctionList */
+static char g_getDeffunctionList__doc__[] = "\
+getDeffunctionList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of deffunction objects in the specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDeffunctionList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDeffunctionList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDeffunctionName */
+static char g_getDeffunctionName__doc__[] = "\
+getDeffunctionName(deffunction) -> str\n\
+retrieve the name of specified deffunction\n\
+returns: name as a string\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to inspect";
+static PyObject *g_getDeffunctionName(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_DEFFUNCTION(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDeffunctionName(clips_deffunction_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDeffunctionPPForm */
+static char g_getDeffunctionPPForm__doc__[] = "\
+getDeffunctionPPForm(deffunction) -> str\n\
+retrieve the pretty-print form of specified deffunction\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to inspect";
+static PyObject *g_getDeffunctionPPForm(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_DEFFUNCTION(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDeffunctionPPForm(clips_deffunction_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDeffunctionWatch */
+static char g_getDeffunctionWatch__doc__[] = "\
+getDeffunctionWatch(deffunction) -> bool\n\
+tell whether or not the deffunction is being watched\n\
+returns: True if the deffunction is being watched, False otherwise\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to inspect";
+static PyObject *g_getDeffunctionWatch(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    i = GetDeffunctionWatch(clips_deffunction_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDeffunction */
+static char g_getNextDeffunction__doc__[] = "\
+getNextDeffunction([deffunction]) -> deffunction\n\
+retrieve next deffunction object in list, first if argument is omitted\n\
+returns: a deffunction object, None if already at last deffunction\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to start from";
+static PyObject *g_getNextDeffunction(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DeffunctionType, &p))
+        FAIL();
+    if(p) CHECK_DEFFUNCTION(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDeffunction(p ? clips_deffunction_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_deffunction_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_deffunction_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDeffunctionDeletable */
+static char g_isDeffunctionDeletable__doc__[] = "\
+isDeffunctionDeletable(deffunction) -> bool\n\
+tell whether or not the deffunction is deletable\n\
+returns: True if the deffunction can be deleted, False otherwise\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to be inspected";
+static PyObject *g_isDeffunctionDeletable(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_DEFFUNCTION(p);
+    i = IsDeffunctionDeletable(clips_deffunction_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDeffunctions */
+static char g_listDeffunctions__doc__[] = "\
+listDeffunctions(logicalname [, module])\n\
+list deffunctions to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDeffunctions(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDeffunctions(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDeffunctionWatch */
+static char g_setDeffunctionWatch__doc__[] = "\
+setDeffunctionWatch(state, deffunction)\n\
+set the specified deffunction to a particular watch state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  deffunction (deffunction) - the deffunction object";
+static PyObject *g_setDeffunctionWatch(PyObject *self, PyObject *args) {
+    PyObject *state = NULL;
+    clips_DeffunctionObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_DEFFUNCTION(p);
+    ACQUIRE_MEMORY_ERROR();
+    SetDeffunctionWatch(PyObject_IsTrue(state), clips_deffunction_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undeffunction */
+static char g_undeffunction__doc__[] = "\
+undeffunction([deffunction])\n\
+delete a deffunction object or all deffunction objects\n\
+arguments:\n\
+  deffunction (deffunction) - the deffunction to delete, all if omitted";
+static PyObject *g_undeffunction(PyObject *self, PyObject *args) {
+    clips_DeffunctionObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DeffunctionType, &p))
+        FAIL();
+    CHECK_RM_DEFFUNCTION(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undeffunction(p ? clips_deffunction_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.10 Defgeneric Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *defgenericExists(void *ptr) {
+    void *rv = GetNextDefgeneric(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDefgeneric(rv);
+    }
+    return NULL;
+}
+#define PYDEFGENERIC_EXISTS(_p) defgenericExists(clips_defgeneric_value(_p))
+#define CHECK_DEFGENERIC(_p) do { \
+        if(!PYDEFGENERIC_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFGENERIC(_p) do { \
+        if(_p && !PYDEFGENERIC_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* defgenericModule */
+static char g_defgenericModule__doc__[] = "\
+defgenericModule(defgeneric) -> str\n\
+retrieve the module name where specified defgeneric is defined\n\
+returns: module name as string\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_defgenericModule(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    char *module = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    module = DefgenericModule(clips_defgeneric_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!module) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    return Py_BuildValue("s", module);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDefgeneric */
+static char g_findDefgeneric__doc__[] = "\
+findDefgeneric(name) -> defgeneric\n\
+return the defgeneric object associated with name\n\
+returns: the defgeneric as a new object\n\
+arguments:\n\
+  name (str) - the name to look for";
+static PyObject *g_findDefgeneric(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DefgenericObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefgeneric(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_defgeneric_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defgeneric_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefgenericList */
+static char g_getDefgenericList__doc__[] = "\
+getDefgenericList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of defgeneric objects in the specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDefgenericList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDefgenericList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefgenericName */
+static char g_getDefgenericName__doc__[] = "\
+getDefgenericName(defgeneric) -> str\n\
+retrieve the name of specified defgeneric\n\
+returns: name as a string\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefgenericName(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefgenericName(clips_deffunction_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefgenericPPForm */
+static char g_getDefgenericPPForm__doc__[] = "\
+getDefgenericPPForm(defgeneric) -> str\n\
+retrieve the pretty-print form of specified defgeneric\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefgenericPPForm(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefgenericPPForm(clips_defgeneric_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefgenericWatch */
+static char g_getDefgenericWatch__doc__[] = "\
+getDefgenericWatch(defgeneric) -> bool\n\
+tell whether or not the defgeneric is being watched\n\
+returns: True if the defgeneric is being watched, False otherwise\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefgenericWatch(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    i = GetDefgenericWatch(clips_deffunction_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDefgeneric */
+static char g_getNextDefgeneric__doc__[] = "\
+getNextDefgeneric([defgeneric]) -> defgeneric\n\
+retrieve next defgeneric object in list, first if argument is omitted\n\
+returns: a defgeneric object, None if already at last defgeneric\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to start from";
+static PyObject *g_getNextDefgeneric(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefgenericType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefgeneric(p ? clips_defgeneric_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_defgeneric_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defgeneric_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDefgenericDeletable */
+static char g_isDefgenericDeletable__doc__[] = "\
+isDefgenericDeletable(defgeneric) -> bool\n\
+tell whether or not the defgeneric is deletable\n\
+returns: True if the defgeneric can be deleted, False otherwise\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to be inspected";
+static PyObject *g_isDefgenericDeletable(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    i = IsDefgenericDeletable(clips_defgeneric_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefgenerics */
+static char g_listDefgenerics__doc__[] = "\
+listDefgenerics(logicalname [, module])\n\
+list defgeneric objects to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDefgenerics(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefgenerics(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefgenericWatch */
+static char g_setDefgenericWatch__doc__[] = "\
+setDefgenericWatch(state, defgeneric)\n\
+set the specified defgeneric to a particular watch state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defgeneric (defgeneric) - the defgeneric object";
+static PyObject *g_setDefgenericWatch(PyObject *self, PyObject *args) {
+    PyObject *state = NULL;
+    clips_DefgenericObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    SetDefgenericWatch(PyObject_IsTrue(state), clips_defgeneric_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefgeneric */
+static char g_undefgeneric__doc__[] = "\
+undefgeneric([defgeneric])\n\
+delete a defgeneric object or all defgeneric objects\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to delete, all if omitted";
+static PyObject *g_undefgeneric(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_RM_DEFGENERIC(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefgeneric(p ? clips_defgeneric_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.11 - Defmethod functions */
+
+/* getDefmethodDescription */
+static char g_getDefmethodDescription__doc__[] = "\
+getDefmethodDescription(index, defgeneric) -> str\n\
+describe method parameter restrictions\n\
+returns: the description as a string\n\
+arguments:\n\
+  index (int) - index of method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefmethodDescription(PyObject *self, PyObject *args) {
+    char *buffer = NEW_ARRAY(char, ppbuffer_size);
+    PyObject *rv = NULL;
+    int i = 0;
+    clips_DefgenericObject *p = NULL;
+
+    if(!buffer) {
+        ERROR_MEMORY("cannot allocate buffer");
+        FAIL();
+    }
+    if(!PyArg_ParseTuple(args, "iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    GetDefmethodDescription(buffer, ppbuffer_size-1, clips_defgeneric_value(p), i);
+    RELEASE_MEMORY_ERROR();
+    rv = Py_BuildValue("s", buffer);
+    DELETE(buffer);
+    return rv;
+
+BEGIN_FAIL
+    if(buffer) DELETE(buffer);
+    SKIP();
+END_FAIL
+}
+
+/* getDefmethodList */
+static char g_getDefmethodList__doc__[] = "\
+getDefmethodList([defgeneric]) -> (MULTIFIELD, list)\n\
+retrieve the list of defmethods in the specified defgeneric\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  defgeneric (defgeneric) - the defgeneric to inspect, all if omitted";
+static PyObject *g_getDefmethodList(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *g = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefgenericType, &g))
+        FAIL();
+    if(g)
+        CHECK_DEFGENERIC(g);
+    ACQUIRE_MEMORY_ERROR();
+    GetDefmethodList(g ? clips_defgeneric_value(g) : NULL, &o);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefmethodPPForm */
+static char g_getDefmethodPPForm__doc__[] = "\
+getDefmethodPPForm(index, defgeneric) -> str\n\
+retrieve the pretty-print form of specified defmethod\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  index (int) - index of method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefmethodPPForm(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefmethodPPForm(clips_defgeneric_value(p), i);
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmethodWatch */
+static char g_getDefmethodWatch__doc__[] = "\
+getDefmethodWatch(index, defgeneric) -> bool\n\
+tell whether or not a defgeneric method is being watched\n\
+returns: True if the method is being watched, False otherwise\n\
+arguments:\n\
+  index (int) - index of method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getDefmethodWatch(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    int i = 0, j = 0;
+
+    if(!PyArg_ParseTuple(args, "iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    j = GetDefmethodWatch(clips_defgeneric_value(p), i);
+    RETURN_BOOL(j);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getMethodRestrictions */
+static char g_getMethodRestrictions__doc__[] = "\
+getMethodRestrictions(index, defgeneric) -> (MULTIFIELD, list)\n\
+retrieve restriction for specified defmethod\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  index (int) - index of method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getMethodRestrictions(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    PyObject *q = NULL;
+    int i = 0;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "i|O!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetMethodRestrictions(p ? clips_defgeneric_value(p) : NULL, i, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getNextDefmethod */
+static char g_getNextDefmethod__doc__[] = "\
+getNextDefmethod(index, defgeneric) -> int\n\
+return index of next defmethod in defgeneric object\n\
+returns: an integer value\n\
+arguments:\n\
+  index (int) - index of method, zero for first method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_getNextDefmethod(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    int i = 0, j = 0;
+
+    if(!PyArg_ParseTuple(args, "iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i < 0) {
+        ERROR_VALUE("index must be positive or zero");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();     /* needed? */
+    j = GetNextDefmethod(p ? clips_defgeneric_value(p) : NULL, i);
+    RELEASE_MEMORY_ERROR();
+    return Py_BuildValue("i", j);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* isDefmethodDeletable */
+static char g_isDefmethodDeletable__doc__[] = "\
+isDefmethodDeletable(index, defgeneric) -> bool\n\
+tell whether the specified method is deletable or not\n\
+returns: True if the method can be deleted, False otherwise\n\
+arguments:\n\
+  index (int) - index of method, zero for first method\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_isDefmethodDeletable(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    int i = 0, j = 0;
+
+    if(!PyArg_ParseTuple(args, "iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i < 0) {
+        ERROR_VALUE("index must be positive or zero");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    j = IsDefmethodDeletable(p ? clips_defgeneric_value(p) : NULL, i);
+    RETURN_BOOL(j);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefmethods */
+static char g_listDefmethods__doc__[] = "\
+listDefmethods(output, defgeneric)\n\
+list the defmethod in the defgeneric object\n\
+arguments:\n\
+  output (str) - logical name of output stream\n\
+  defgeneric (defgeneric) - the defgeneric to inspect";
+static PyObject *g_listDefmethods(PyObject *self, PyObject *args) {
+    clips_DefgenericObject *p = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefgenericType, &p))
+        FAIL();
+    CHECK_DEFGENERIC(p);
+    ACQUIRE_MEMORY_ERROR();
+    ListDefmethods(lname, p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefmethodWatch */
+static char g_setDefmethodWatch__doc__[] = "\
+setDefmethodWatch(state, index, defgeneric)\n\
+set the specified defgeneric to a particular watch state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defgeneric (defgeneric) - the defgeneric object";
+static PyObject *g_setDefmethodWatch(PyObject *self, PyObject *args) {
+    int i = 0;
+    PyObject *state = NULL;
+    clips_DefgenericObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "OiO!", &state, &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFGENERIC(p);
+    SetDefmethodWatch(PyObject_IsTrue(state), clips_defgeneric_value(p), i);
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefmethod */
+static char g_undefmethod__doc__[] = "\
+undefmethod([index, defgeneric])\n\
+delete a defmethod object or all defmethod objects\n\
+arguments:\n\
+  index (int) - index of defmethod to delete, all if omitted\n\
+  defgeneric (defgeneric) - referred defgeneric, all if omitted";
+static PyObject *g_undefmethod(PyObject *self, PyObject *args) {
+    int i = 0;
+    clips_DefgenericObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "|iO!", &i, &clips_DefgenericType, &p))
+        FAIL();
+    if(i < 0) {
+        ERROR_VALUE("index must be positive or zero");
+        FAIL();
+    }
+    if(i != 0 && !p) {
+        ERROR_VALUE("both arguments must be omitted or specified");
+        FAIL();
+    }
+    if(p)
+        CHECK_DEFGENERIC(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefmethod(p ? clips_defgeneric_value(p) : NULL, i)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.12 - Defclass Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *defclassExists(void *ptr) {
+    void *rv = GetNextDefclass(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDefclass(rv);
+    }
+    return NULL;
+}
+#define PYDEFCLASS_EXISTS(_p) defclassExists(clips_defclass_value(_p))
+#define CHECK_DEFCLASS(_p) do { \
+        if(!PYDEFCLASS_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFCLASS(_p) do { \
+        if(_p && !PYDEFCLASS_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual function with documentation */
+
+/* browseClasses */
+static char g_browseClasses__doc__[] = "\
+browseClasses(output, defclass)\n\
+print the classes who inherit from specified one in a graph form\n\
+arguments:\n\
+  output (str) - the name of logical output\n\
+  defclass (defclass) - the defclass to inspect";
+static PyObject *g_browseClasses(PyObject *self, PyObject *args) {
+    char *s = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO!", &s, &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    BrowseClasses(s, clips_defclass_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* classAbstractP */
+static char g_classAbstractP__doc__[] = "\
+classAbstractP(defclass) -> bool\n\
+tell if class is abstract or concrete\n\
+returns: True if the class is abstract, False if concrete\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect";
+static PyObject *g_classAbstractP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = ClassAbstractP(clips_defclass_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* classReactiveP */
+static char g_classReactiveP__doc__[] = "\
+classReactiveP(defclass) -> bool\n\
+tell if class is reactive (matches object patterns) or not\n\
+returns: True if the class is reactive, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect";
+static PyObject *g_classReactiveP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = ClassReactiveP(clips_defclass_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* classSlots */
+static char g_classSlots__doc__[] = "\
+classSlots(defclass, inherit) -> (MULTIFIELD, list)\n\
+return names of slots of the passed in class\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  inherit (bool) - True to include inherited slots, False otherwise";
+static PyObject *g_classSlots(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!O", &clips_DefclassType, &p, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ClassSlots(clips_defclass_value(p), &o, PyObject_IsTrue(q));
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* classSubclasses */
+static char g_classSubclasses__doc__[] = "\
+classSubclasses(defclass, inherit) -> (MULTIFIELD, list)\n\
+return names of subclasses for the passed in class\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  inherit (bool) - True to include inherited slots, False otherwise";
+static PyObject *g_classSubclasses(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!O", &clips_DefclassType, &p, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ClassSubclasses(clips_defclass_value(p), &o, PyObject_IsTrue(q));
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* classSuperclasses */
+static char g_classSuperclasses__doc__[] = "\
+classSuperclasses(defclass, inherit) -> (MULTIFIELD, list)\n\
+return names of superclasses for the passed in class\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  inherit (bool) - True to include inherited slots, False otherwise";
+static PyObject *g_classSuperclasses(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!O", &clips_DefclassType, &p, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ClassSuperclasses(clips_defclass_value(p), &o, PyObject_IsTrue(q));
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* defclassModule */
+static char g_defclassModule__doc__[] = "\
+defclassModule(defclass) -> str\n\
+retrieve the name of the module where the provided defclass resides\n\
+returns: a string containing a module name\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect";
+static PyObject *g_defclassModule(PyObject *self, PyObject *args) {
+    char *module = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    module = DefclassModule(clips_defclass_value(p));
+    if(!module) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    return Py_BuildValue("s", module);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* describeClass */
+static char g_describeClass__doc__[] = "\
+describeClass(output, defclass)\n\
+print a descriptive summary of class\n\
+arguments:\n\
+  output (str) - logical name of output stream\n\
+  defclass (defclass) - the defclass to inspect";
+static PyObject *g_describeClass(PyObject *self, PyObject *args) {
+    char *lname = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO!", &lname, &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    DescribeClass(lname, clips_defclass_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDefclass */
+static char g_findDefclass__doc__[] = "\
+findDefclass(name) -> defclass\n\
+retrieve defclass object corresponding to the specified name\n\
+returns: the defclass as a new object\n\
+arguments:\n\
+  name (str) - the name of the defclass to look for";
+static PyObject *g_findDefclass(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefclass(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_defclass_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defclass_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getClassDefaultsMode */
+FUNC_GET_ONLY(getClassDefaultsMode,
+              g_getClassDefaultsMode,
+              GetClassDefaultsMode,
+              "i")
+
+/* getDefclassList */
+static char g_getDefclassList__doc__[] = "\
+getDefclassList([module]) -> (MULTIFIELD, list)\n\
+retrieve list of defclass objects names in specified defmodule\n\
+returns:  MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDefclassList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDefclassList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefclassName */
+static char g_getDefclassName__doc__[] = "\
+getDefclassName(defclass) -> str\n\
+retrieve the name of given defclass object\n\
+returns: a string containing the name\n\
+arguments:\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_getDefclassName(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefclassName(clips_defclass_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefclassPPForm */
+static char g_getDefclassPPForm__doc__[] = "\
+getDefclassPPForm(defclass) -> str\n\
+retrieve the pretty-print form of given defclass object\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_getDefclassPPForm(PyObject *self, PyObject *args) {
+    char *s = NULL;
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefclassPPForm(clips_defclass_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefclassWatchInstances */
+static char g_getDefclassWatchInstances__doc__[] = "\
+getDefclassWatchInstances(defclass) -> bool\n\
+tell if defclass instances are being watched\n\
+returns: True if defclass instances are being watched, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_getDefclassWatchInstances(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = GetDefclassWatchInstances(clips_defclass_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefclassWatchSlots */
+static char g_getDefclassWatchSlots__doc__[] = "\
+getDefclassWatchSlots(defclass) -> bool\n\
+tell if defclass slots are being watched\n\
+returns: True if defclass slots are being watched, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_getDefclassWatchSlots(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    i = GetDefclassWatchSlots(clips_defclass_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDefclass */
+static char g_getNextDefclass__doc__[] = "\
+getNextDefclass([defclass]) -> defclass\n\
+find next defclass in the list, first if argument is omitted\n\
+returns: next defclass object, None if already at last defclass\n\
+arguments:\n\
+  defclass (defclass) - the defclass to start from";
+static PyObject *g_getNextDefclass(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefclassType, &p))
+        FAIL();
+    if(p)
+        CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefclass(p ? clips_defclass_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_defclass_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defclass_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDefclassDeletable */
+static char g_isDefclassDeletable__doc__[] = "\
+isDefclassDeletable(defclass) -> bool\n\
+tell whether or not the defclass can be deleted\n\
+returns: True if the defclass can be deleted, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_isDefclassDeletable(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p)) FAIL();
+    CHECK_DEFCLASS(p);
+    i = IsDefclassDeletable(clips_defclass_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefclasses */
+static char g_listDefclasses__doc__[] = "\
+listDefclasses(logicalname [, module])\n\
+list defclasses to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDefclasses(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefclasses(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setClassDefaultsMode */
+static char g_setClassDefaultsMode__doc__[] = "\
+setClassDefaultsMode(mode)\n\
+set default mode for classes\n\
+arguments:\n\
+  mode (int) - the new default mode";
+static PyObject *g_setClassDefaultsMode(PyObject *self, PyObject *args) {
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "i", &i))
+        FAIL();
+    if(i != CONVENIENCE_MODE && i != CONSERVATION_MODE) {
+        ERROR_VALUE("invalid mode value");
+        FAIL();
+    }
+    SetClassDefaultsMode((unsigned short)i);
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefclassWatchInstances */
+static char g_setDefclassWatchInstances__doc__[] = "\
+setDefclassWatchInstances(state, defclass)\n\
+tell to system if defclass instances are to be watched\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_setDefclassWatchInstances(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *state = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    SetDefclassWatchInstances(
+        PyObject_IsTrue(state), clips_defclass_value(p));
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefclassWatchSlots */
+static char g_setDefclassWatchSlots__doc__[] = "\
+setDefclassWatchSlots(state, defclass)\n\
+tell to system if defclass slots are to be watched\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defclass (defclass) - the defclass object";
+static PyObject *g_setDefclassWatchSlots(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *state = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!", &state, &clips_DefclassType, &p))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    SetDefclassWatchSlots(PyObject_IsTrue(state), clips_defclass_value(p));
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotAllowedValues */
+static char g_slotAllowedValues__doc__[] = "\
+slotAllowedValues(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve allowed values for specified slot\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotAllowedValues(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotAllowedValues(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* slotCardinality */
+static char g_slotCardinality__doc__[] = "\
+slotCardinality(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve cardinality information for specified slot\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotCardinality(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotCardinality(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+#if CLIPS_MINOR > 23
+
+/* slotAllowedClasses */
+static char g_slotAllowedClasses__doc__[] = "\
+slotAllowedClasses(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve the allowed classes for a slot of given class\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_slotAllowedClasses(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &name))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotAllowedClasses(clips_defclass_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotDefaultValue */
+static char g_slotDefaultValue__doc__[] = "\
+slotDefaultValue(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve default value(s) for a slot of given defclass\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - name of the slot to inspect";
+static PyObject *g_slotDefaultValue(PyObject *self, PyObject *args) {
+    clips_DeftemplObject *p = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+    PyObject *rv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &name))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotDefaultValue(clips_defclass_value(p), name, &o);
+    rv = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!rv) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(rv);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+#else
+UNIMPLEMENT_VERSION(slotAllowedClasses, g_slotAllowedClasses)
+UNIMPLEMENT_VERSION(slotDefaultValue, g_slotDefaultValue)
+#endif /* CLIPS_MINOR > 23 */
+
+/* slotDirectAccessP */
+static char g_slotDirectAccessP__doc__[] = "\
+slotDirectAccessP(defclass, name) -> bool\n\
+tell if slot is directly accessible\n\
+returns: True if slot is directly accessible, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotDirectAccessP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = SlotDirectAccessP(clips_defclass_value(p), s);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotExistP */
+static char g_slotExistP__doc__[] = "\
+slotExistP(defclass, name, inherit) -> bool\n\
+tell if slot exists\n\
+returns: True if slot exists, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotExistP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!sO", &clips_DefclassType, &p, &s, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = SlotExistP(clips_defclass_value(p), s, PyObject_IsTrue(q));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotFacets */
+static char g_slotFacets__doc__[] = "\
+slotFacets(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve facet values information for specified slot\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotFacets(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotFacets(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* slotInitableP */
+static char g_slotInitableP__doc__[] = "\
+slotInitableP(defclass, name) -> bool\n\
+tell if slot is initializable\n\
+returns: True if slot can be initialized, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotInitableP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = SlotInitableP(clips_defclass_value(p), s);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotPublicP */
+static char g_slotPublicP__doc__[] = "\
+slotPublicP(defclass, name) -> bool\n\
+tell if slot is public\n\
+returns: True if slot is public, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotPublicP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = SlotPublicP(clips_defclass_value(p), s);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* slotRange */
+static char g_slotRange__doc__[] = "\
+slotRange(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve numeric range information for specified slot\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotRange(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotRange(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* slotSources */
+static char g_slotSources__doc__[] = "\
+slotSources(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve the name of class sources for specified slot\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotSources(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotSources(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* slotTypes */
+static char g_slotTypes__doc__[] = "\
+slotTypes(defclass, name) -> (MULTIFIELD, list)\n\
+retrieve cardinality information for specified slot\n\
+returns: MULTIFIELD and a list of pairs (type, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotTypes(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *q = NULL;
+    char *s = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SlotTypes(clips_defclass_value(p), s, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* slotWritableP */
+static char g_slotWritableP__doc__[] = "\
+slotWritableP(defclass, name) -> bool\n\
+tell whether slot can be overwritten or not\n\
+returns: True if slot is writeable, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  name (str) - the slot name";
+static PyObject *g_slotWritableP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &s))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    i = SlotWritableP(clips_defclass_value(p), s);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* subclassP */
+static char g_subclassP__doc__[] = "\
+subclassP(defclass1, defclass2) -> bool\n\
+tell if defclass1 is a subclass of defclass2\n\
+returns: True if relationship is satisfied, False otherwise\n\
+arguments:\n\
+  defclass1, defclass2 (defclass) - test objects";
+static PyObject *g_subclassP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL, *q = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!O!",
+                         &clips_DefclassType, &p, &clips_DefclassType, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    CHECK_DEFCLASS(q);
+    i = SubclassP(clips_defclass_value(p), clips_defclass_value(q));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* superclassP */
+static char g_superclassP__doc__[] = "\
+superclassP(defclass1, defclass2) -> bool\n\
+tell if defclass1 is a superclass of defclass2\n\
+returns: True if relationship is satisfied, False otherwise\n\
+arguments:\n\
+  defclass1, defclass2 (defclass) - test objects";
+static PyObject *g_superclassP(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL, *q = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!O!",
+                         &clips_DefclassType, &p, &clips_DefclassType, &q))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    CHECK_DEFCLASS(q);
+    i = SuperclassP(clips_defclass_value(p), clips_defclass_value(q));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefclass */
+static char g_undefclass__doc__[] = "\
+undefclass(defclass)\n\
+remove a class and all its subclasses from system\n\
+arguments:\n\
+  defclass (defclass) - the defclass to remove";
+static PyObject *g_undefclass(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefclassType, &p))
+        FAIL();
+    CHECK_RM_DEFCLASS(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefclass(clips_defclass_value(p))) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.13 - Instances Functions */
+
+/* binaryLoadInstances */
+static char g_binaryLoadInstances__doc__[] = "\
+binaryLoadInstances(filename) -> int\n\
+binary load a set of instances from named file\n\
+returns: the number of loaded instances\n\
+arguments:\n\
+  filename (str) - the name of binary file to load from";
+static PyObject *g_binaryLoadInstances(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = BinaryLoadInstances(fn);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    else RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* binarySaveInstances */
+static char g_binarySaveInstances__doc__[] = "\
+binarySaveInstances(filename, scope) -> int\n\
+dump instances to file\n\
+returns: the number of saved instances\n\
+arguments:\n\
+  filename (str) - the name of binary file to save to\n\
+  scope (int) - one of LOCAL_SAVE or VISIBLE_SAVE";
+static PyObject *g_binarySaveInstances(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    long i = 0;
+
+    if(!PyArg_ParseTuple(args, "si", &fn, &i)) FAIL();
+    if(i != LOCAL_SAVE && i != VISIBLE_SAVE) {
+        ERROR_VALUE("invalid scope");
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    i = BinarySaveInstances(fn, i, NULL, TRUE);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    } /* do not know */
+    else RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* createRawInstance */
+static char g_createRawInstance__doc__[] = "\
+createRawInstance(defclass, name) -> instance\n\
+create an instance of specified class with given name\n\
+returns: the instance as a new object\n\
+arguments:\n\
+  defclass (defclass) - the defclass to create an instance of\n\
+  name (str) - the name of the instance";
+static PyObject *g_createRawInstance(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    clips_InstanceObject *q = NULL;
+    void *ptr = 0;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_DefclassType, &p, &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = CreateRawInstance(clips_defclass_value(p), name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_CREATION();
+        FAIL();
+    }
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* decrementInstanceCount */
+UNIMPLEMENT(decrementInstanceCount, g_decrementInstanceCount)
+
+/* deleteInstance */
+static char g_deleteInstance__doc__[] = "\
+deleteInstance([instance])\n\
+delete specified instance\n\
+arguments:\n\
+  instance (instance) - the instance to delete, all if omitted";
+static PyObject *g_deleteInstance(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!DeleteInstance(p ? clips_instance_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* directGetSlot */
+static char g_directGetSlot__doc__[] = "\
+directGetSlot(instance, slotname) -> (type, value)\n\
+get value in specified slot of given instance\n\
+returns: a pair (type, value)\n\
+arguments:\n\
+  instance (instance) - the instance to inspect\n\
+  slotname (str) - the slot to retrieve";
+static PyObject *g_directGetSlot(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    PyObject *q = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s", &clips_InstanceType, &p, &name))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    DirectGetSlot(clips_instance_value(p), name, &o);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* directPutSlot */
+static char g_directPutSlot__doc__[] = "\
+directPutSlot(instance, slotname, (type, value))\n\
+put a value in specified slot of given instance\n\
+arguments:\n\
+  instance (instance) - the instance to inspect\n\
+  slotname (str) - the slot to retrieve\n\
+  type (int) - the type of value to assign\n\
+  value (object or list of pairs) - the value to assign";
+static PyObject *g_directPutSlot(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    PyObject *q = NULL;
+    char *name = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!sO", &clips_InstanceType, &p, &name, &q))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    if(!i_py2do(q, &o)) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!DirectPutSlot(clips_instance_value(p), name, &o)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_OTHER("instance slot could not be modified");
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findInstance */
+static char g_findInstance__doc__[] = "\
+findInstance(name, srchimports [, module]) -> instance\n\
+find the instance with the specified name\n\
+returns: the instance as a new object\n\
+arguments:\n\
+  name (str) - instance name\n\
+  srchimports (bool) - True if imported modules have to be inspected\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_findInstance(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    clips_InstanceObject *q = NULL;
+    char *name = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO|O!",
+                         &name, &p, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindInstance(
+        module ? clips_defmodule_value(module) : NULL,
+        name, PyObject_IsTrue(p));
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getInstanceClass */
+static char g_getInstanceClass__doc__[] = "\
+getInstanceClass(instance) -> defclass\n\
+retrieve the class of specified instance\n\
+returns: the instance defclass as a new object\n\
+arguments:\n\
+  instance (instance) - the instance to inspect";
+static PyObject *g_getInstanceClass(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    clips_DefclassObject *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetInstanceClass(clips_instance_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    clips_defclass_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defclass_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getInstanceName */
+static char g_getInstanceName__doc__[] = "\
+getInstanceName(instance) -> str\n\
+retrieve the name of specified instance\n\
+returns: the requested name of instance\n\
+arguments:\n\
+  instance (instance) - the instance to inspect";
+static PyObject *g_getInstanceName(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetInstanceName(clips_instance_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getInstancePPForm */
+static char g_getInstancePPForm__doc__[] = "\
+getInstancePPForm(instance) -> str\n\
+retrieve the pretty-print form of specified instance\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  instance (instance) - the instance to inspect";
+static PyObject *g_getInstancePPForm(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    char *buffer = NEW_ARRAY(char, ppbuffer_size);
+    PyObject *rv = NULL;
+
+    if(!buffer) {
+        ERROR_MEMORY("cannot allocate buffer");
+        FAIL();
+    }
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetInstancePPForm(buffer, ppbuffer_size-1, clips_instance_value(p));
+    RELEASE_MEMORY_ERROR();
+    rv = Py_BuildValue("s", buffer);
+    DELETE(buffer);
+    return rv;
+
+BEGIN_FAIL
+    if(buffer) DELETE(buffer);
+    SKIP();
+END_FAIL
+}
+
+/* getInstancesChanged */
+STATUS_FUNC_GET_BOOL(getInstancesChanged,
+                     g_getInstancesChanged,
+                     GetInstancesChanged)
+
+/* getNextInstance */
+static char g_getNextInstance__doc__[] = "\
+getNextInstance([instance]) -> instance\n\
+retrieve next instance object in list, first if argument is omitted\n\
+returns: a instance object, None if already at last instance\n\
+arguments:\n\
+  instance (defrule) - the instance to start from";
+static PyObject *g_getNextInstance(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_InstanceType, &p))
+        FAIL();
+    if(p)
+        CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextInstance(p ? clips_instance_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) RETURN_NONE();
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getNextInstanceInClass */
+static char g_getNextInstanceInClass__doc__[] = "\
+getNextInstanceInClass(defclass [, instance]) -> instance\n\
+retrieve next instance object in class, first if argument is omitted\n\
+returns: a instance object, None if already at last instance\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  instance (instance) - the instance to start from";
+static PyObject *g_getNextInstanceInClass(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL, *q = NULL;
+    clips_DefclassObject *c = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!|O!",
+                         &clips_DefclassType, &c, &clips_InstanceType, &p))
+        FAIL();
+    CHECK_DEFCLASS(c);
+    if(p)
+        CHECK_VALID_INSTANCE(p);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextInstanceInClass(
+        clips_defclass_value(c), p ? clips_instance_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) RETURN_NONE();
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getNextInstanceInClassAndSubclasses */
+static char g_getNextInstanceInClassAndSubclasses__doc__[] = "\
+getNextInstanceInClassAndSubclasses(defclass [, instance]) -> instance\n\
+retrieve next instance in class/subclasses, first if argument is omitted\n\
+returns: a instance object, None if already at last instance\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  instance (instance) - the instance to start from";
+static PyObject *g_getNextInstanceInClassAndSubclasses(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL, *q = NULL;
+    clips_DefclassObject *c = NULL;
+    DATA_OBJECT o = { 0 };
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!|O!",
+                         &clips_DefclassType, &c, &clips_InstanceType, &p))
+        FAIL();
+    CHECK_DEFCLASS(c);
+    if(p)
+        CHECK_VALID_INSTANCE(p);
+    /* we should iterate from the start in order to keep the iteration data */
+    ACQUIRE_MEMORY_ERROR();
+    if(p) {
+        ptr = GetNextInstanceInClassAndSubclasses_PY(
+            clips_defclass_value(c), NULL, &o);
+        /* move cursor to the instance we passed in */
+        while(ptr && ptr != clips_instance_value(p))
+            ptr = GetNextInstanceInClassAndSubclasses_PY(
+                clips_defclass_value(c), ptr, &o);
+        /* move cursor one step forward if conditions met (may return NULL) */
+        if(ptr)
+            ptr = GetNextInstanceInClassAndSubclasses_PY(
+                clips_defclass_value(c), ptr, &o);
+    } else
+        ptr = GetNextInstanceInClassAndSubclasses_PY(
+            clips_defclass_value(c), NULL, &o);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+
+/* incrementInstanceCount */
+UNIMPLEMENT(incrementInstanceCount, g_incrementInstanceCount)
+
+/* instances */
+static char g_instances__doc__[] = "\
+instances(output [, module] [, class [, subclassflag]]])\n\
+list instances in specified defmodule to logical output\n\
+arguments:\n\
+  output (str) - the name of logical output stream\n\
+  module (defmodule) - the defmodule to inspect, all if omitted\n\
+  class (str) - the class name to inspect, all if omitted\n\
+  subclassflag (bool) - True if all subclasses must be recursed";
+static PyObject *g_instances(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = Py_None;
+    char *name = NULL, *output = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!sO", &output,
+       &clips_DefmoduleType, &module, &name, &p)) {
+        PyErr_Clear();
+        module = NULL;
+        if(!PyArg_ParseTuple(args, "s|sO", &output, &name, &p)) {
+            PyErr_Clear();
+            ERROR_TYPE("invalid argument(s) or invalid argument order");
+            FAIL();
+        }
+    }
+    ACQUIRE_MEMORY_ERROR();
+    Instances(
+        output, module ? clips_defmodule_value(module) : NULL,
+        name, p ? PyObject_IsTrue(p) : FALSE);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* loadInstances */
+static char g_loadInstances__doc__[] = "\
+loadInstances(filename) -> int\n\
+load instance from specified file\n\
+returns: the number of loaded instances\n\
+arguments:\n\
+  filename (str) - the name of file to load instances from";
+static PyObject *g_loadInstances(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = LoadInstances(fn);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* makeInstance */
+static char g_makeInstance__doc__[] = "\
+makeInstance(command) -> instance\n\
+create and initialize an instance using given command\n\
+returns: a new instance\n\
+arguments:\n\
+  command (str) - command used to create instance";
+static PyObject *g_makeInstance(PyObject *self, PyObject *args) {
+    clips_InstanceObject *q = NULL;
+    char *s = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &s))
+        FAIL();
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = MakeInstance(s);
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    if(!ptr) {
+        ERROR_CLIPS_CREATION();
+        FAIL();
+    }
+    clips_instance_New(GetCurrentEnvironment(), q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_instance_assign(q, ptr);
+    CHECK_VALID_INSTANCE(q);
+    clips_instance_lock(q);
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* restoreInstances */
+static char g_restoreInstances__doc__[] = "\
+restoreInstances(filename) -> int\n\
+restore instance from specified file\n\
+returns: number of restored instances\n\
+arguments:\n\
+  filename (str) - the name of file to restore instances from";
+static PyObject *g_restoreInstances(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "s", &fn))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = RestoreInstances(fn);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    }
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* saveInstances */
+static char g_saveInstances__doc__[] = "\
+saveInstances(filename, scope) -> int\n\
+save instances to specified file\n\
+returns: the number of saved instances\n\
+arguments:\n\
+  filename (str) - the name of file to save instances to\n\
+  scope (int) - one of LOCAL_SAVE or VISIBLE_SAVE";
+static PyObject *g_saveInstances(PyObject *self, PyObject *args) {
+    char *fn = NULL;
+    long i = 0;
+
+    if(!PyArg_ParseTuple(args, "si", &fn, &i))
+        FAIL();
+    if(i != LOCAL_SAVE && i != VISIBLE_SAVE) {
+        ERROR_VALUE("invalid scope");
+        FAIL();
+    }
+    ACQUIRE_MEMORY_ERROR();
+    i = SaveInstances(fn, i, NULL, TRUE);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_IO();
+        FAIL();
+    } /* do not know */
+    else
+        RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* send */
+static char g_send__doc__[] = "\
+send(instance, message [, arguments])\n\
+send a message to specified object\n\
+returns: the result value for the operation if any\n\
+arguments:\n\
+  instance (instance) - object to send message to\n\
+  message (str) - message to send\n\
+  arguments (str) - blank separated constant arguments";
+static PyObject *g_send(PyObject *self, PyObject *args) {
+    PyObject *p = NULL, *q = NULL;
+    char *msg = NULL, *msa = NULL;
+    DATA_OBJECT o = { 0 }, rv = { 0 };
+
+    if(!PyArg_ParseTuple(args, "O!s|s", &clips_InstanceType, &p, &msg, &msa))
+        FAIL();
+    CHECK_VALID_INSTANCE(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    SetType(o, INSTANCE_ADDRESS);
+    SetValue(o, clips_instance_value(p));
+    Send(&o, msg, msa, &rv);
+    q = i_do2py(&rv);
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    if(q) {
+        RETURN_PYOBJECT(q);
+    } else RETURN_NONE();
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* setInstancesChanged */
+STATUS_FUNC_SET_BOOL(setInstancesChanged,
+                     g_setInstancesChanged,
+                     SetInstancesChanged)
+
+/* unmakeInstance */
+static char g_unmakeInstance__doc__[] = "\
+unmakeInstance([instance])\n\
+delete specified instance (passing a message)\n\
+arguments:\n\
+  instance (instance) - instance to delete, all if omitted";
+static PyObject *g_unmakeInstance(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    if(p)
+        CHECK_VALID_INSTANCE(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!UnmakeInstance(p ? clips_instance_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* validInstanceAddress */
+static char g_validInstanceAddress__doc__[] = "\
+validInstanceAddress(instance) -> bool\n\
+tell whether the instance still exists or not\n\
+returns: True if instance exists, False otherwise\n\
+arguments:\n\
+  instance (instance) - istance to test";
+static PyObject *g_validInstanceAddress(PyObject *self, PyObject *args) {
+    clips_InstanceObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_InstanceType, &p))
+        FAIL();
+    i = ValidInstanceAddress(clips_instance_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* loadInstancesFromString */
+static char g_loadInstancesFromString__doc__[] = "\
+loadInstancesFromString(string [, maxpos]) -> int\n\
+load instances from a string\n\
+returns: the number of loaded instances\n\
+arguments:\n\
+  string (str) - string to read from\n\
+  maxpos (int) - last char to read, all string if omitted";
+static PyObject *g_loadInstancesFromString(PyObject *self, PyObject *args) {
+    char *s = NULL;
+    int i = -1;
+
+    if(!PyArg_ParseTuple(args, "s|i", &s, &i))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = LoadInstancesFromString(s, i);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* restoreInstancesFromString */
+static char g_restoreInstancesFromString__doc__[] = "\
+restoreInstancesFromString(string [, maxpos]) -> int\n\
+restore instances from a string\n\
+returns: number of restored instances\n\
+arguments:\n\
+  string (str) - string to read from\n\
+  maxpos (int) - last char to read, all string if omitted";
+static PyObject *g_restoreInstancesFromString(PyObject *self, PyObject *args) {
+    char *s = NULL;
+    int i = -1;
+
+    if(!PyArg_ParseTuple(args, "s|i", &s, &i))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = RestoreInstancesFromString(s, i);
+    RELEASE_MEMORY_ERROR();
+    if(i < 0) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.14 - DefmessageHandler Functions */
+
+/* findDefmessageHandler */
+static char g_findDefmessageHandler__doc__[] = "\
+findDefmessageHandler(defclass, name, type) -> int\n\
+find the matching message handler attached to defclass\n\
+returns: index of message handler\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect object\n\
+  name (str) - message handler name\n\
+  type (str) - one of 'around', 'before', 'primary', 'after'";
+static PyObject *g_findDefmessageHandler(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *name = NULL, *type = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!ss", &clips_DefclassType, &p, &name, &type))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    i = (int)FindDefmessageHandler(clips_defclass_value(p), name, type);
+    RELEASE_MEMORY_ERROR();
+    CHECK_DEFCLASS(p);
+    if(i == 0) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmessageHandlerList */
+static char g_getDefmessageHandlerList__doc__[] = "\
+getDefmessageHandlerList([defclass [, inh]]) -> (MULTIFIELD, list)\n\
+retrieve list of message handlers attached to defclass\n\
+returns: MULTIFIELD and a list of pairs (STRING, value)\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect, all if omitted\n\
+  inh (bool) - True if inherited handlers are to list";
+static PyObject *g_getDefmessageHandlerList(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *p1 = NULL, *q = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!O", &clips_DefclassType, &p, &p1))
+        FAIL();
+    if(p)
+        CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    GetDefmessageHandlerList(
+        p ? clips_defclass_value(p) : NULL,
+        &o, p1 ? PyObject_IsTrue(p1) : FALSE);
+    q = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!q) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* getDefmessageHandlerName */
+static char g_getDefmessageHandlerName__doc__[] = "\
+getDefmessageHandlerName(defclass, index) -> str\n\
+retrieve the name of specified message handler\n\
+returns: name as string\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_getDefmessageHandlerName(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *name = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i",  &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefmessageHandlerName(clips_defclass_value(p), (unsigned int)i);
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmessageHandlerPPForm */
+static char g_getDefmessageHandlerPPForm__doc__[] = "\
+getDefmessageHandlerPPForm(defclass, index) -> str\n\
+retrieve the pretty-print form of specified message handler\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_getDefmessageHandlerPPForm(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i",  &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefmessageHandlerPPForm(clips_defclass_value(p), (unsigned int)i);
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmessageHandlerType */
+static char g_getDefmessageHandlerType__doc__[] = "\
+getDefmessageHandlerType(defclass, index) -> str\n\
+retrieve type of specified message handler\n\
+returns: type as string\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_getDefmessageHandlerType(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i",  &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefmessageHandlerType(clips_defclass_value(p), (unsigned int)i);
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmessageHandlerWatch */
+static char g_getDefmessageHandlerWatch__doc__[] = "\
+getDefmessageHandlerWatch(defclass, index) -> bool\n\
+tell if specified message handler is being watched\n\
+returns: True if the message handler is being watched, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_getDefmessageHandlerWatch(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i",  &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    i = GetDefmessageHandlerWatch(clips_defclass_value(p), (unsigned int)i);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDefmessageHandler */
+static char g_getNextDefmessageHandler__doc__[] = "\
+getNextDefmessageHandler(defclass [, index]) -> int\n\
+return index of next message handler for specified class\n\
+returns: index as an integer, None if already at last handler\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of current handler, 0 or omitted for first";
+static PyObject *g_getNextDefmessageHandler(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!|i", &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i < 0) {
+        ERROR_VALUE("index must be positive or zero");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    i = GetNextDefmessageHandler(clips_defclass_value(p), (unsigned int)i);
+    RELEASE_MEMORY_ERROR();
+    if(i == 0)
+        RETURN_NONE();
+    RETURN_INT(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* isDefmessageHandlerDeletable */
+static char g_isDefmessageHandlerDeletable__doc__[] = "\
+isDefmessageHandlerDeletable(defclass, index) -> bool\n\
+tell whether or not the specified message handler can be deleted\n\
+returns: True if the message handler can be deleted, False otherwise\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_isDefmessageHandlerDeletable(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i", &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    i = IsDefmessageHandlerDeletable(clips_defclass_value(p), (unsigned int)i);
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefmessageHandlers */
+static char g_listDefmessageHandlers__doc__[] = "\
+listDefmessageHandlers(output [, defclass [, inhflag]])\n\
+list message handlers to logical output\n\
+arguments:\n\
+  output (str) - the name of output stream\n\
+  defclass (defclass) - the defclass to inspect\n\
+  inhflag (bool) - True to list inherited handlers";
+static PyObject *g_listDefmessageHandlers(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    PyObject *p1 = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!O", &s, &clips_DefclassType, &p, &p1))
+        FAIL();
+    if(p)
+        CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    ListDefmessageHandlers(s,
+        p ? clips_defclass_value(p) : NULL, p1 ? PyObject_IsTrue(p1) : FALSE);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* previewSend */
+static char g_previewSend__doc__[] = "\
+previewSend(output, defclass, messagename)\n\
+list message handlers applicable to instances to logical output\n\
+arguments:\n\
+  output (str) - logical output stream name\n\
+  defclass (defclass) - the defclass to inspect\n\
+  messagename (str) - the name of message";
+static PyObject *g_previewSend(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    char *s = NULL, *m = NULL;
+
+    if(!PyArg_ParseTuple(args, "sO!s", &s, &clips_DefclassType, &p, &m))
+        FAIL();
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    PreviewSend(s, clips_defclass_value(p), m);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setDefmessageHandlerWatch */
+static char g_setDefmessageHandlerWatch__doc__[] = "\
+setDefmessageHandlerWatch(state, defclass, index)\n\
+set watch on message handler to specified state\n\
+arguments:\n\
+  state (bool) - the new watch state\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_setDefmessageHandlerWatch(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+    PyObject *state = NULL;
+
+    if(!PyArg_ParseTuple(args, "OO!i", &state, &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    SetDefmessageHandlerWatch(
+        PyObject_IsTrue(state), clips_defclass_value(p), (unsigned int)i);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefmessageHandler */
+static char g_undefmessageHandler__doc__[] = "\
+undefmessageHandler(defclass, index)\n\
+remove specified message handler from system\n\
+arguments:\n\
+  defclass (defclass) - the defclass to inspect\n\
+  index (int) - index of handler";
+static PyObject *g_undefmessageHandler(PyObject *self, PyObject *args) {
+    clips_DefclassObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!i", &clips_DefclassType, &p, &i))
+        FAIL();
+    if(i <= 0) {
+        ERROR_VALUE("index must be positive");
+        FAIL();
+    }
+    CHECK_DEFCLASS(p);
+    ACQUIRE_MEMORY_ERROR();
+    if(!UndefmessageHandler(clips_defclass_value(p), (unsigned int)i)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.15 - Definstances Functions */
+
+/* helper to check whether there is still this construct */
+F_INLINE void *definstancesExists(void *ptr) {
+    void *rv = GetNextDefinstances(NULL);
+    while(rv != NULL) {
+        if(rv == ptr) return rv;
+        else rv = GetNextDefinstances(rv);
+    }
+    return NULL;
+}
+#define PYDEFINSTANCES_EXISTS(_p) \
+    definstancesExists(clips_definstances_value(_p))
+#define CHECK_DEFINSTANCES(_p) do { \
+        if(!PYDEFINSTANCES_EXISTS(_p)) { \
+            ERROR_CLIPS_NOTFOUND(); \
+            FAIL(); \
+        } \
+    } while(0)
+#define CHECK_RM_DEFINSTANCES(_p) do { \
+        if(_p && !PYDEFINSTANCES_EXISTS(_p)) { \
+            ERROR_CLIPS_REMOVE(); \
+            FAIL(); \
+        } \
+    } while(0)
+/* actual functions with documentation */
+
+/* definstancesModule */
+static char g_definstancesModule__doc__[] = "\
+definstancesModule(definstances) -> str\n\
+retrieve the module name where specified definstances is defined\n\
+returns: module name as string\n\
+arguments:\n\
+  definstances (definstances) - the definstances to inspect";
+static PyObject *g_definstancesModule(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefinstancesType, &p))
+        FAIL();
+    CHECK_DEFINSTANCES(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = DefinstancesModule(clips_definstances_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* findDefinstances */
+static char g_findDefinstances__doc__[] = "\
+findDefinstances(name) -> definstances\n\
+return the definstances object associated with name\n\
+returns: the definstances as a new object\n\
+arguments:\n\
+  name (str) - the name to look for";
+static PyObject *g_findDefinstances(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DefinstancesObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name)) FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefinstances(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) { ERROR_CLIPS_NOTFOUND(); FAIL(); }
+    clips_definstances_New(p);
+    if(!p) { ERROR_MEMORY_CREATION(); FAIL(); }
+    clips_definstances_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefinstancesList */
+static char g_getDefinstancesList__doc__[] = "\
+getDefinstancesList([module]) -> (MULTIFIELD, list)\n\
+retrieve the list of definstances objects in the specified defmodule\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)\n\
+arguments:\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_getDefinstancesList(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    GetDefinstancesList(&o, module ? clips_defmodule_value(module) : NULL);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefinstancesName */
+static char g_getDefinstancesName__doc__[] = "\
+getDefinstancesName(definstances) -> str\n\
+retrieve the name of specified definstances\n\
+returns: name as a string\n\
+arguments:\n\
+  definstances (definstances) - the definstances to inspect";
+static PyObject *g_getDefinstancesName(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefinstancesType, &p))
+        FAIL();
+    CHECK_DEFINSTANCES(p);
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefinstancesName(clips_definstances_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefinstancesPPForm */
+static char g_getDefinstancesPPForm__doc__[] = "\
+getDefinstancesPPForm(definstances) -> str\n\
+retrieve the pretty-print form of specified definstances\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  definstances (definstances) - the definstances to inspect";
+static PyObject *g_getDefinstancesPPForm(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefinstancesType, &p))
+        FAIL();
+    CHECK_DEFINSTANCES(p);
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefinstancesPPForm(clips_definstances_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDefinstances */
+static char g_getNextDefinstances__doc__[] = "\
+getNextDefinstances([definstances]) -> definstances\n\
+retrieve next definstances object in list, first if argument is omitted\n\
+returns: a definstances object, None if already at last definstances\n\
+arguments:\n\
+  definstances (definstances) - the definstances to start from";
+static PyObject *g_getNextDefinstances(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefinstancesType, &p))
+        FAIL();
+    if(p) { CHECK_DEFINSTANCES(p); }
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefinstances(p ? clips_definstances_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) RETURN_NONE();
+    clips_definstances_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_definstances_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* isDefinstancesDeletable */
+static char g_isDefinstancesDeletable__doc__[] = "\
+isDefinstancesDeletable(definstances) -> bool\n\
+tell whether or not the definstances can be deleted\n\
+returns: True if the definstances can be deleted, False otherwise\n\
+arguments:\n\
+  definstances (definstances) - the definstances to be inspected";
+static PyObject *g_isDefinstancesDeletable(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL;
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefinstancesType, &p))
+        FAIL();
+    CHECK_DEFINSTANCES(p);
+    i = IsDefinstancesDeletable(clips_definstances_value(p));
+    RETURN_BOOL(i);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* listDefinstances */
+static char g_listDefinstances__doc__[] = "\
+listDefinstances(logicalname [, module])\n\
+list definstances to output identified by logicalname\n\
+arguments:\n\
+  logicalname (str) - the logical name of output\n\
+  module (defmodule) - the defmodule to inspect, all if omitted";
+static PyObject *g_listDefinstances(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *module = NULL;
+    char *lname = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O!", &lname, &clips_DefmoduleType, &module))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefinstances(lname, module ? clips_defmodule_value(module) : NULL);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* undefinstances */
+static char g_undefinstances__doc__[] = "\
+undefinstances([definstances])\n\
+delete a definstances object or all definstances objects\n\
+arguments:\n\
+  definstances (definstances) - object to be deleted, all if omitted";
+static PyObject *g_undefinstances(PyObject *self, PyObject *args) {
+    clips_DefinstancesObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefinstancesType, &p))
+        FAIL();
+    CHECK_RM_DEFINSTANCES(p);
+    CLIPS_LOCK_GC();
+    ACQUIRE_MEMORY_ERROR();
+    if(!Undefinstances(p ? clips_definstances_value(p) : NULL)) {
+        RELEASE_MEMORY_ERROR();
+        CLIPS_UNLOCK_GC();
+        ERROR_CLIPS_REMOVE();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    CLIPS_UNLOCK_GC();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* 4.16 - Defmodule functions */
+
+/* findDefmodule */
+static char g_findDefmodule__doc__[] = "\
+findDefmodule(name) -> defmodule\n\
+return the defmodule object associated with name\n\
+returns: the defmodule as a new object\n\
+arguments:\n\
+  name (str) - the name to look for";
+static PyObject *g_findDefmodule(PyObject *self, PyObject *args) {
+    char *name = NULL;
+    void *ptr = NULL;
+    clips_DefmoduleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &name))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = FindDefmodule(name);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    clips_defmodule_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defmodule_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getCurrentModule */
+static char g_getCurrentModule__doc__[] = "\
+getCurrentModule() -> defmodule\n\
+return current module\n\
+returns: current module as a new object";
+static PyObject *g_getCurrentModule(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    void *ptr = NULL;
+
+    CHECK_NOARGS(args);
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetCurrentModule();
+    RELEASE_MEMORY_ERROR();
+    if(!ptr) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    clips_defmodule_New(p);
+    if(!p) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defmodule_value(p) = ptr;
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefmoduleList */
+static char g_getDefmoduleList__doc__[] = "\
+getDefmoduleList() -> (MULTIFIELD, list)\n\
+return the list of modules in system\n\
+returns: MULTIFIELD and a list of pairs (STRING, name)";
+static PyObject *g_getDefmoduleList(PyObject *self, PyObject *args) {
+    PyObject *p = NULL;
+    DATA_OBJECT o = { 0 };
+
+    CHECK_NOARGS(args);
+    ACQUIRE_MEMORY_ERROR();
+    GetDefmoduleList(&o);
+    p = i_do2py(&o);
+    RELEASE_MEMORY_ERROR();
+    if(!p) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_PYOBJECT(p);
+
+BEGIN_FAIL
+    Py_XDECREF(p);
+END_FAIL
+}
+
+/* getDefmoduleName */
+static char g_getDefmoduleName__doc__[] = "\
+getDefmoduleName(defmodule) -> str\n\
+retrieve the name of specified defmodule\n\
+returns: name as a string\n\
+arguments:\n\
+  defmodule (defmodule) - the defmodule to inspect";
+static PyObject *g_getDefmoduleName(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *name = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    name = GetDefmoduleName(clips_defmodule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!name) { ERROR_CLIPS_RETVAL(); FAIL(); }
+    RETURN_STR(name);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getDefmodulePPForm */
+static char g_getDefmodulePPForm__doc__[] = "\
+getDefmodulePPForm(defmodule) -> str\n\
+retrieve the pretty-print form of specified defmodule\n\
+returns: the requested pretty-print form as a string\n\
+arguments:\n\
+  defmodule (defmodule) - the defmodule to inspect";
+static PyObject *g_getDefmodulePPForm(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+    char *s = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    s = GetDefmodulePPForm(clips_defmodule_value(p));
+    RELEASE_MEMORY_ERROR();
+    if(!s) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    RETURN_STR(s);
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* getNextDefmodule */
+static char g_getNextDefmodule__doc__[] = "\
+getNextDefmodule([defmodule]) -> defmodule\n\
+retrieve next defmodule object in list, first if argument is omitted\n\
+returns: a defmodule object, None if already at last defmodule\n\
+arguments:\n\
+  defmodule (defmodule) - the defmodule to start from";
+static PyObject *g_getNextDefmodule(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL, *q = NULL;
+    void *ptr = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O!", &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ptr = GetNextDefmodule(p ? clips_defmodule_value(p) : NULL);
+    RELEASE_MEMORY_ERROR();
+    if(!ptr)
+        RETURN_NONE();
+    clips_defmodule_New(q);
+    if(!q) {
+        ERROR_MEMORY_CREATION();
+        FAIL();
+    }
+    clips_defmodule_value(q) = ptr;
+    RETURN_PYOBJECT(q);
+
+BEGIN_FAIL
+    Py_XDECREF(q);
+END_FAIL
+}
+
+/* listDefmodules */
+static char g_listDefmodules__doc__[] = "\
+listDefmodules(output)\n\
+list modules to logical output\n\
+arguments:\n\
+  output (str) - logical name of output stream";
+static PyObject *g_listDefmodules(PyObject *self, PyObject *args) {
+    char *output = NULL;
+
+    if(!PyArg_ParseTuple(args, "s", &output))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    ListDefmodules(output);
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* setCurrentModule */
+static char g_setCurrentModule__doc__[] = "\
+setCurrentModule(defmodule)\n\
+set current module to the one specified\n\
+arguments:\n\
+  defmodule (defmodule) - new current defmodule";
+static PyObject *g_setCurrentModule(PyObject *self, PyObject *args) {
+    clips_DefmoduleObject *p = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_DefmoduleType, &p))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    SetCurrentModule(clips_defmodule_value(p));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* sendCommand [undocumented] */
+static char g_sendCommand__doc__[] = "\
+sendCommand(command [, verbose])\n\
+send a full command to the engine as if it was typed at the prompt\n\
+arguments:\n\
+  command (str) - the complete command to send\n\
+  verbose (bool) - if True command can produce output";
+static PyObject *g_sendCommand(PyObject *self, PyObject *args) {
+    void *env = NULL;
+    char *command = NULL;
+    int res = 0, verbose = FALSE;
+    PyObject *v = NULL;
+
+    if(!PyArg_ParseTuple(args, "s|O", &command, &v))
+        FAIL();
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_NOENV();
+        FAIL();
+    }
+    verbose = (v && PyObject_IsTrue(v)) ? TRUE : FALSE;
+    ACQUIRE_MEMORY_ERROR();
+    FlushPPBuffer(env);
+    SetPPBufferStatus(env, OFF);
+    RouteCommand(env, command, verbose);
+    res = GetEvaluationError(env);
+    FlushPPBuffer(env);
+    SetHaltExecution(env, FALSE);
+    SetEvaluationError(env, FALSE);
+    FlushBindList(env);
+    RELEASE_MEMORY_ERROR();
+    if(res) {
+        ERROR_CLIPS_PARSEA();
+        FAIL();
+    }
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+/* forceCleanup() [undocumented] */
+static char g_forceCleanup__doc__[] = "\
+forceCleanup([alldepths, heuristics])\n\
+attempt to force a garbage collection\n\
+arguments:\n\
+  alldepths (bool) - True to clean up all depths (default)\n\
+  heuristics (bool) - True to use heuristics (default)";
+static PyObject *g_forceCleanup(PyObject *self, PyObject *args) {
+    void *env = GetCurrentEnvironment();
+    PyObject *alldepths = NULL, *heuristics = NULL;
+
+    if(!PyArg_ParseTuple(args, "|OO", &alldepths, &heuristics))
+        FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(EngineData(env)->ExecutingRule != NULL) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPSSYS_CLEANUP();
+        FAIL();
+    }
+    PeriodicCleanup(env,
+        alldepths ? TRUE : PyObject_IsTrue(alldepths),
+        heuristics ? TRUE : PyObject_IsTrue(heuristics));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+
+
+/* ======================================================================== */
+
+
 
 /* helper to check if an environment is safe to use */
 #define CHECK_VALID_ENVIRONMENT(_e) do { \
@@ -1658,6 +9131,7 @@ static PyObject *e_bload(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1687,6 +9161,7 @@ static PyObject *e_bsave(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1713,6 +9188,7 @@ static PyObject *e_clear(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!", &clips_EnvType, &pyenv))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -1755,6 +9231,7 @@ static PyObject *e_functionCall(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!s|s",
                          &clips_EnvType, &pyenv, &func, &fargs))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -1817,6 +9294,7 @@ static PyObject *e_load(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1858,6 +9336,7 @@ static PyObject *e_reset(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!", &clips_EnvType, &pyenv))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -1885,6 +9364,7 @@ static PyObject *e_save(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1936,6 +9416,7 @@ static PyObject *e_batchStar(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1965,6 +9446,7 @@ static PyObject *e_build(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &cons))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -1999,6 +9481,7 @@ static PyObject *e_eval(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &expr))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -2044,6 +9527,7 @@ static PyObject *e_dribbleOn(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -2110,6 +9594,7 @@ static PyObject *e_unwatch(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &item))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -2142,6 +9627,7 @@ static PyObject *e_watch(PyObject *self, PyObject *args) {
     char *item = NULL;
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &item)) FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -2282,7 +9768,7 @@ static PyObject *e_deftemplateSlotCardinality(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotCardinality(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py_e(env, &o);
+    rv = i_do2py(&o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -2350,7 +9836,7 @@ static PyObject *e_deftemplateSlotDefaultValue(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotDefaultValue(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py_e(env, &o);
+    rv = i_do2py(&o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -2447,7 +9933,7 @@ static PyObject *e_deftemplateSlotNames(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotNames(env, clips_deftemplate_value(p), &o);
-    rv = i_do2py_e(env, &o);
+    rv = i_do2py(&o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -2484,7 +9970,7 @@ static PyObject *e_deftemplateSlotRange(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotRange(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py_e(env, &o);
+    rv = i_do2py(&o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -2552,7 +10038,7 @@ static PyObject *e_deftemplateSlotTypes(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotTypes(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py_e(env, &o);
+    rv = i_do2py(&o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -2604,6 +10090,7 @@ static PyObject *e_findDeftemplate(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -2772,6 +10259,7 @@ static PyObject *e_getNextDeftemplate(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DeftemplType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -2867,6 +10355,7 @@ static PyObject *e_setDeftemplateWatch(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DeftemplType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFTEMPLATE(env, p);
@@ -2893,6 +10382,7 @@ static PyObject *e_undeftemplate(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DeftemplType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFTEMPLATE(env, p);
@@ -2932,6 +10422,7 @@ static PyObject *e_assertFact(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CHECK_VALID_FACT(env, p);
@@ -2985,6 +10476,7 @@ static PyObject *e_assertString(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &expr))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -3026,6 +10518,7 @@ static PyObject *e_assignFactSlotDefaults(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CHECK_VALID_FACT(env, p);
@@ -3064,6 +10557,7 @@ static PyObject *e_createFact(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DeftemplType, &q))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -3143,6 +10637,7 @@ static PyObject *e_facts(PyObject *self, PyObject *args) {
                          &clips_DefmoduleType, &module,
                          &start, &end, &max))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -3279,6 +10774,7 @@ static PyObject *e_getNextFact(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -3323,6 +10819,7 @@ static PyObject *e_getNextFactInTemplate(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DeftemplType, &t, &clips_FactType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFTEMPLATE(env, t);
@@ -3366,6 +10863,7 @@ static PyObject *e_loadFacts(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -3439,6 +10937,7 @@ static PyObject *e_putFactSlot(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_FactType, &f, &s, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CHECK_VALID_FACT(env, f);
@@ -3480,6 +10979,7 @@ static PyObject *e_retract(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CHECK_VALID_FACT(env, p);
@@ -3606,7 +11106,7 @@ static PyObject *e_factExistp(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
     CHECK_VALID_ENVIRONMENT(pyenv);
-    i = EnvFactExistp(clips_environment_value(pyenv), clips_fact_value(p));
+    i = FactExistp(clips_fact_value(p));
     RETURN_BOOL(i);
 
 BEGIN_FAIL
@@ -3697,6 +11197,7 @@ static PyObject *e_loadFactsFromString(PyObject *self, PyObject *args) {
     char *s = NULL;
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &s)) FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -3790,6 +11291,7 @@ static PyObject *e_findDeffacts(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -3929,6 +11431,7 @@ static PyObject *e_getNextDeffacts(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DeffactsType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -4021,6 +11524,7 @@ static PyObject *e_undeffacts(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DeffactsType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFFACTS(env, p);
@@ -4145,6 +11649,7 @@ static PyObject *e_findDefrule(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -4339,6 +11844,7 @@ static PyObject *e_getNextDefrule(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -4432,6 +11938,7 @@ static PyObject *e_matches(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &s, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4463,6 +11970,7 @@ static PyObject *e_refresh(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4494,6 +12002,7 @@ static PyObject *e_removeBreak(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4525,6 +12034,7 @@ static PyObject *e_setBreak(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4555,6 +12065,7 @@ static PyObject *e_setDefruleWatchActivations(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4584,6 +12095,7 @@ static PyObject *e_setDefruleWatchFirings(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFRULE(env, p);
@@ -4644,6 +12156,7 @@ static PyObject *e_undefrule(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefruleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p && !env_defruleExists(env, clips_defrule_value(p))) {
@@ -4744,6 +12257,7 @@ static PyObject *e_deleteActivation(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_ActivationType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_ACTIVATION(env, p);
@@ -4775,6 +12289,7 @@ static PyObject *e_focus(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefmoduleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -4968,6 +12483,7 @@ static PyObject *e_getNextActivation(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_ActivationType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -5041,6 +12557,7 @@ static PyObject *e_refreshAgenda(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefmoduleType, &module))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -5071,6 +12588,7 @@ static PyObject *e_reorderAgenda(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefmoduleType, &module))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -5097,6 +12615,7 @@ static PyObject *e_run(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!|i", &clips_EnvType, &pyenv, &runlimit))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -5127,6 +12646,7 @@ static PyObject *e_setActivationSalience(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_ActivationType, &p, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_ACTIVATION(env, p);
@@ -5158,6 +12678,7 @@ static PyObject *e_setSalienceEvaluation(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!i", &clips_EnvType, &pyenv, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(i != WHEN_DEFINED && i != WHEN_ACTIVATED && i != EVERY_CYCLE) {
@@ -5187,6 +12708,7 @@ static PyObject *e_setStrategy(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!i", &clips_EnvType, &pyenv, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(i != DEPTH_STRATEGY && i != BREADTH_STRATEGY && i != LEX_STRATEGY &&
@@ -5281,6 +12803,7 @@ static PyObject *e_findDefglobal(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -5528,6 +13051,7 @@ static PyObject *e_getNextDefglobal(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DefglobalType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -5628,6 +13152,7 @@ static PyObject *e_setDefglobalValue(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!sO", &clips_EnvType, &pyenv, &name, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(!i_py2do_e(env, p, &o)) {
@@ -5669,6 +13194,7 @@ static PyObject *e_setDefglobalWatch(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefglobalType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFGLOBAL(env, p);
@@ -5734,6 +13260,7 @@ static PyObject *e_undefglobal(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefglobalType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFGLOBAL(env, p);
@@ -5831,6 +13358,7 @@ static PyObject *e_findDeffunction(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -5998,6 +13526,7 @@ static PyObject *e_getNextDeffunction(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DeffunctionType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -6094,6 +13623,7 @@ static PyObject *e_setDeffunctionWatch(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DeffunctionType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFFUNCTION(env, p);
@@ -6120,6 +13650,7 @@ static PyObject *e_undeffunction(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DeffunctionType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFFUNCTION(env, p);
@@ -6217,6 +13748,7 @@ static PyObject *e_findDefgeneric(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -6384,6 +13916,7 @@ static PyObject *e_getNextDefgeneric(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DefgenericType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -6424,7 +13957,7 @@ static PyObject *e_isDefgenericDeletable(PyObject *self, PyObject *args) {
         FAIL();
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
-    i = EnvIsDefgenericDeletable(env, clips_defgeneric_value(p));
+    i = IsDefgenericDeletable(clips_defgeneric_value(p));
     RETURN_BOOL(i);
 
 BEGIN_FAIL
@@ -6479,6 +14012,7 @@ static PyObject *e_setDefgenericWatch(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefgenericType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFGENERIC(env, p);
@@ -6507,6 +14041,7 @@ static PyObject *e_undefgeneric(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefgenericType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFGENERIC(env, p);
@@ -6745,6 +14280,7 @@ static PyObject *e_getNextDefmethod(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive or zero");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFGENERIC(env, p);
@@ -6842,6 +14378,7 @@ static PyObject *e_setDefmethodWatch(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFGENERIC(env, p);
@@ -6877,6 +14414,7 @@ static PyObject *e_undefmethod(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive or zero");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(i != 0 && !p) {
@@ -7203,6 +14741,7 @@ static PyObject *e_findDefclass(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -7403,6 +14942,7 @@ static PyObject *e_getNextDefclass(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DefclassType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -7495,6 +15035,7 @@ static PyObject *e_setClassDefaultsMode(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!i", &clips_EnvType, &pyenv, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(i != CONVENIENCE_MODE && i != CONSERVATION_MODE) {
@@ -7528,6 +15069,7 @@ static PyObject *e_setDefclassWatchInstances(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefclassType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -7559,6 +15101,7 @@ static PyObject *e_setDefclassWatchSlots(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &state, &clips_DefclassType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -8106,6 +15649,7 @@ static PyObject *e_undefclass(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefclassType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFCLASS(env, p);
@@ -8144,6 +15688,7 @@ static PyObject *e_binaryLoadInstances(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -8216,6 +15761,7 @@ static PyObject *e_createRawInstance(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefclassType, &p, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -8259,6 +15805,7 @@ static PyObject *e_deleteInstance(PyObject *self, PyObject *args) {
         FAIL();
     if(p)
         ENV_CHECK_VALID_INSTANCE(env, p);
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -8338,6 +15885,7 @@ static PyObject *e_directPutSlot(PyObject *self, PyObject *args) {
                          &clips_InstanceType, &p, &name, &q))
         FAIL();
     ENV_CHECK_VALID_INSTANCE(env, p);
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(!i_py2do_e(env, q, &o)) {
@@ -8383,6 +15931,7 @@ static PyObject *e_findInstance(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &name, &p, &clips_DefmoduleType, &module))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -8426,9 +15975,10 @@ static PyObject *e_getInstanceClass(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
+    ENV_CHECK_VALID_INSTANCE(env, p);
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
-    ENV_CHECK_VALID_INSTANCE(env, p);
     ACQUIRE_MEMORY_ERROR();
     ptr = EnvGetInstanceClass(env, clips_instance_value(p));
     RELEASE_MEMORY_ERROR();
@@ -8465,9 +16015,9 @@ static PyObject *e_getInstanceName(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
+    ENV_CHECK_VALID_INSTANCE(env, p);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
-    ENV_CHECK_VALID_INSTANCE(env, p);
     ACQUIRE_MEMORY_ERROR();
     name = EnvGetInstanceName(env, clips_instance_value(p));
     RELEASE_MEMORY_ERROR();
@@ -8541,6 +16091,7 @@ static PyObject *e_getNextInstance(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     if(p)
         ENV_CHECK_VALID_INSTANCE(env, p);
@@ -8583,6 +16134,7 @@ static PyObject *e_getNextInstanceInClass(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!|O!",
         &clips_EnvType, &pyenv, &clips_DefclassType, &c,
         &clips_InstanceType, &p)) FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     if(p) { ENV_CHECK_VALID_INSTANCE(env, p); }
     env = clips_environment_value(pyenv);
@@ -8628,6 +16180,7 @@ static PyObject *e_getNextInstanceInClassAndSubclasses(PyObject *self, PyObject 
                          &clips_EnvType, &pyenv,
                          &clips_DefclassType, &c, &clips_InstanceType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     if(p)
         ENV_CHECK_VALID_INSTANCE(env, p);
@@ -8727,6 +16280,7 @@ static PyObject *e_loadInstances(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -8759,6 +16313,7 @@ static PyObject *e_makeInstance(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &s))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -8800,6 +16355,7 @@ static PyObject *e_restoreInstances(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &fn))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -8872,6 +16428,7 @@ static PyObject *e_send(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_InstanceType, &p, &msg, &msa))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CHECK_VALID_INSTANCE(env, p);
@@ -8880,7 +16437,7 @@ static PyObject *e_send(PyObject *self, PyObject *args) {
     SetType(o, INSTANCE_ADDRESS);
     SetValue(o, clips_instance_value(p));
     EnvSend(env, &o, msg, msa, &rv);
-    q = i_do2py_e(env, &rv);
+    q = i_do2py(&rv);
     RELEASE_MEMORY_ERROR();
     ENV_CLIPS_UNLOCK_GC(pyenv);
     if(q) {
@@ -8913,6 +16470,7 @@ static PyObject *e_unmakeInstance(PyObject *self, PyObject *args) {
         FAIL();
     if(p)
         ENV_CHECK_VALID_INSTANCE(env, p);
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ENV_CLIPS_LOCK_GC(pyenv);
@@ -8974,6 +16532,7 @@ static PyObject *e_loadInstancesFromString(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s|i", &clips_EnvType, &pyenv, &s, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -9006,6 +16565,7 @@ static PyObject *e_restoreInstancesFromString(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s|i", &clips_EnvType, &pyenv, &s, &i))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -9045,6 +16605,7 @@ static PyObject *e_findDefmessageHandler(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefclassType, &p, &name, &type))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -9277,6 +16838,7 @@ static PyObject *e_getNextDefmessageHandler(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive or zero");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -9414,6 +16976,7 @@ static PyObject *e_setDefmessageHandlerWatch(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -9449,6 +17012,7 @@ static PyObject *e_undefmessageHandler(PyObject *self, PyObject *args) {
         ERROR_VALUE("index must be positive");
         FAIL();
     }
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_DEFCLASS(env, p);
@@ -9544,6 +17108,7 @@ static PyObject *e_findDefinstances(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -9687,6 +17252,7 @@ static PyObject *e_getNextDefinstances(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefinstancesType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(p)
@@ -9782,6 +17348,7 @@ static PyObject *e_undefinstances(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &clips_DefinstancesType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ECHECK_RM_DEFINSTANCES(env, p);
@@ -9818,6 +17385,7 @@ static PyObject *e_findDefmodule(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!s", &clips_EnvType, &pyenv, &name))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -9853,6 +17421,7 @@ static PyObject *e_getCurrentModule(PyObject *self, PyObject *args) {
 
     if(!PyArg_ParseTuple(args, "O!", &clips_EnvType, &pyenv))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -9985,6 +17554,7 @@ static PyObject *e_getNextDefmodule(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!|O!",
                          &clips_EnvType, &pyenv, &clips_DefmoduleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -10044,6 +17614,7 @@ static PyObject *e_setCurrentModule(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_DefmoduleType, &p))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
@@ -10073,6 +17644,7 @@ static PyObject *e_sendCommand(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!s|O",
                          &clips_EnvType, &pyenv, &command, &v))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     verbose = (v && PyObject_IsTrue(v)) ? TRUE : FALSE;
@@ -10113,6 +17685,7 @@ static PyObject *e_forceCleanup(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv,
                          &alldepths, &heuristics))
         FAIL();
+    CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
     if(EngineData(env)->ExecutingRule != NULL) {
@@ -10136,13 +17709,13 @@ END_FAIL
 /* 8.2 - Memory Management */
 
 /* getConserveMemory */
-E_STATUS_FUNC_GET_BOOL(getConserveMemory, m_getConserveMemory, EnvGetConserveMemory)
+STATUS_FUNC_GET_BOOL(getConserveMemory, m_getConserveMemory, GetConserveMemory)
 
 /* memRequests */
-E_STATUS_FUNC_GET(memRequests, m_memRequests, EnvMemRequests, "i")
+STATUS_FUNC_GET(memRequests, m_memRequests, MemRequests, "i")
 
 /* memUsed */
-E_STATUS_FUNC_GET(memUsed, m_memUsed, EnvMemUsed, "i")
+STATUS_FUNC_GET(memUsed, m_memUsed, MemUsed, "i")
 
 /* releaseMem */
 static char m_releaseMem__doc__[] = "\
@@ -10153,19 +17726,14 @@ arguments:\n\
   tell (bool) - True to print out a message\n\
   bytes (int) - bytes to free, all if omitted";
 static PyObject *m_releaseMem(PyObject *self, PyObject *args) {
-    clips_EnvObject *pyenv = NULL;
-    void *env = NULL;
     PyObject *tell = NULL;
     int b = -1;
     long b1 = 0;
 
-    if(!PyArg_ParseTuple(args, "O!O|i",
-                         &clips_EnvType, &pyenv,
-                         &tell, &b))
+    if(!PyArg_ParseTuple(args, "O|i", &tell, &b))
         FAIL();
-    env = clips_environment_value(pyenv);
     ACQUIRE_MEMORY_ERROR();
-    b1 = EnvReleaseMem(env, b, PyObject_IsTrue(tell));
+    b1 = ReleaseMem(b, PyObject_IsTrue(tell));
     RELEASE_MEMORY_ERROR();
     RETURN_INT(b1);
 
@@ -10175,7 +17743,7 @@ END_FAIL
 }
 
 /* setConserveMemory */
-E_STATUS_FUNC_SET_BOOL(setConserveMemory, m_setConserveMemory, SetConserveMemory)
+STATUS_FUNC_SET_BOOL(setConserveMemory, m_setConserveMemory, SetConserveMemory)
 
 /* setOutOfMemoryFunction */
 UNIMPLEMENT(setOutOfMemoryFunction, m_setOutOfMemoryFunction)
@@ -10313,10 +17881,10 @@ static PyObject *v_createEnvironment(PyObject *self, PyObject *args) {
         FAIL();
     }
     /* save current environment, we need to reset it before we are back */
-    /* if(!(oldptr = GetCurrentEnvironment())) {
+    if(!(oldptr = GetCurrentEnvironment())) {
         ERROR_CLIPS_NOENV();
         FAIL();
-    } */
+    }
     env = CreateEnvironment();
     if(!env) {
         ERROR_CLIPS_CREATION();
@@ -10348,7 +17916,7 @@ static PyObject *v_createEnvironment(PyObject *self, PyObject *args) {
                  clips_env_exitFunction);
     EnvActivateRouter(env, "python");
     /* as said above restore environment in order to avoid problems */
-    /* SetCurrentEnvironment(oldptr); */
+    SetCurrentEnvironment(oldptr);
     /* if we are here the environment creation was successful */
     RELEASE_MEMORY_ERROR();
     num_environments++;
@@ -10357,7 +17925,7 @@ static PyObject *v_createEnvironment(PyObject *self, PyObject *args) {
 BEGIN_FAIL
     if(env) {
         DestroyEnvironment(env);
-        /* SetCurrentEnvironment(oldptr); */
+        SetCurrentEnvironment(oldptr);
     }
     Py_XDECREF(pyenv);
 END_FAIL
@@ -10367,7 +17935,30 @@ END_FAIL
 UNIMPLEMENT(destroyEnvironment, v_destroyEnvironment)
 
 /* getCurrentEnvironment */
-UNIMPLEMENT(getCurrentEnvironment, v_getCurrentEnvironment)
+static char v_getCurrentEnvironment__doc__[] = "\
+getCurrentEnvironment() -> environment\n\
+return current environment\n\
+returns: an environment object";
+static PyObject *v_getCurrentEnvironment(PyObject *self, PyObject *args) {
+    clips_EnvObject *pyenv = NULL;
+    void *env = NULL;
+
+    CHECK_NOARGS(args);
+    env = GetCurrentEnvironment();
+    if(!env) {
+        ERROR_CLIPS_RETVAL();
+        FAIL();
+    }
+    clips_environment_New(pyenv);
+    clips_environment_value(pyenv) = env;
+    INJECT_ADDITIONAL_ENVIRONMENT_DATA(pyenv);
+    CHECK_VALID_ENVIRONMENT(pyenv);
+    RETURN_PYOBJECT(pyenv);
+
+BEGIN_FAIL
+    Py_XDECREF(pyenv);
+END_FAIL
+}
 
 /* getEnvironmentData */
 UNIMPLEMENT(getEnvironmentData, v_getEnvironmentData)
@@ -10395,10 +17986,58 @@ END_FAIL
 }
 
 /* setCurrentEnvironment */
-UNIMPLEMENT(setCurrentEnvironment, v_setCurrentEnvironment)
+static char v_setCurrentEnvironment__doc__[] = "\
+setCurrentEnvironment(environment)\n\
+switch to specified environment\n\
+arguments:\n\
+  environment (environment) - the environment to switch to";
+static PyObject *v_setCurrentEnvironment(PyObject *self, PyObject *args) {
+    clips_EnvObject *pyenv = NULL;
+
+    if(!PyArg_ParseTuple(args, "O!", &clips_EnvType, &pyenv))
+        FAIL();
+    CHECK_VALID_ENVIRONMENT(pyenv);
+    /* we cannot preserve GC counter status for current environment */
+    /* RESET_ASSERTED_FACTS(); */ /* reset GC counter for old environment... */
+    COPY_ADDITIONAL_ENVIRONMENT_DATA(pyenv);
+    ACQUIRE_MEMORY_ERROR();
+    SetCurrentEnvironment(clips_environment_value(pyenv));
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
 
 /* setCurrentEnvironmentByIndex */
+/* if GC locking is enabled we cannot consider this function safe */
+#ifndef USE_NONASSERT_CLIPSGCLOCK
+static char v_setCurrentEnvironmentByIndex__doc__[] = "\
+setCurrentEnvironmentByIndex(index)\n\
+switch to specified environment passing its index\n\
+arguments:\n\
+  index (int) - unique index of environment to switch to";
+static PyObject *v_setCurrentEnvironmentByIndex(PyObject *self, PyObject *args) {
+    int i = 0;
+
+    if(!PyArg_ParseTuple(args, "i", &i)) FAIL();
+    ACQUIRE_MEMORY_ERROR();
+    if(!SetCurrentEnvironmentByIndex(i)) {
+        RELEASE_MEMORY_ERROR();
+        ERROR_CLIPS_NOTFOUND();
+        FAIL();
+    }
+    RELEASE_MEMORY_ERROR();
+    RETURN_NONE();
+
+BEGIN_FAIL
+    SKIP();
+END_FAIL
+}
+#else
 UNIMPLEMENT(setCurrentEnvironmentByIndex, v_setCurrentEnvironmentByIndex)
+#endif /* USE_NONASSERT_CLIPSGCLOCK */
 
 
 
@@ -11241,6 +18880,287 @@ static PyTypeObject guard_Type = {
 
 /* global methods map */
 static PyMethodDef g_methods[] = {
+    MMAP_ENTRY(addClearFunction, g_addClearFunction),
+    MMAP_ENTRY(addPeriodicFunction, g_addPeriodicFunction),
+    MMAP_ENTRY(addResetFunction, g_addResetFunction),
+    MMAP_ENTRY(bload, g_bload),
+    MMAP_ENTRY(bsave, g_bsave),
+    MMAP_ENTRY(clear, g_clear),
+    MMAP_ENTRY(functionCall, g_functionCall),
+    MMAP_ENTRY(getAutoFloatDividend, g_getAutoFloatDividend),
+    MMAP_ENTRY(getDynamicConstraintChecking, g_getDynamicConstraintChecking),
+    MMAP_ENTRY(getSequenceOperatorRecognition, g_getSequenceOperatorRecognition),
+    MMAP_ENTRY(getStaticConstraintChecking, g_getStaticConstraintChecking),
+    MMAP_ENTRY(load, g_load),
+    MMAP_ENTRY(reset, g_reset),
+    MMAP_ENTRY(save, g_save),
+    MMAP_ENTRY(setAutoFloatDividend, g_setAutoFloatDividend),
+    MMAP_ENTRY(setDynamicConstraintChecking, g_setDynamicConstraintChecking),
+    MMAP_ENTRY(setSequenceOperatorRecognition, g_setSequenceOperatorRecognition),
+    MMAP_ENTRY(setStaticConstraintChecking, g_setStaticConstraintChecking),
+    MMAP_ENTRY(batchStar, g_batchStar),
+    MMAP_ENTRY(build, g_build),
+    MMAP_ENTRY(eval, g_eval),
+    MMAP_ENTRY(dribbleActive, g_dribbleActive),
+    MMAP_ENTRY(dribbleOff, g_dribbleOff),
+    MMAP_ENTRY(dribbleOn, g_dribbleOn),
+    MMAP_ENTRY(getWatchItem, g_getWatchItem),
+    MMAP_ENTRY(unwatch, g_unwatch),
+    MMAP_ENTRY(watch, g_watch),
+    MMAP_ENTRY(deftemplateModule, g_deftemplateModule),
+    MMAP_ENTRY(deftemplateSlotAllowedValues, g_deftemplateSlotAllowedValues),
+    MMAP_ENTRY(deftemplateSlotCardinality, g_deftemplateSlotCardinality),
+    MMAP_ENTRY(deftemplateSlotDefaultP, g_deftemplateSlotDefaultP),
+    MMAP_ENTRY(deftemplateSlotDefaultValue, g_deftemplateSlotDefaultValue),
+    MMAP_ENTRY(deftemplateSlotExistP, g_deftemplateSlotExistP),
+    MMAP_ENTRY(deftemplateSlotMultiP, g_deftemplateSlotMultiP),
+    MMAP_ENTRY(deftemplateSlotNames, g_deftemplateSlotNames),
+    MMAP_ENTRY(deftemplateSlotRange, g_deftemplateSlotRange),
+    MMAP_ENTRY(deftemplateSlotSingleP, g_deftemplateSlotSingleP),
+    MMAP_ENTRY(deftemplateSlotTypes, g_deftemplateSlotTypes),
+    MMAP_ENTRY(findDeftemplate, g_findDeftemplate),
+    MMAP_ENTRY(getDeftemplateList, g_getDeftemplateList),
+    MMAP_ENTRY(getDeftemplateName, g_getDeftemplateName),
+    MMAP_ENTRY(getDeftemplatePPForm, g_getDeftemplatePPForm),
+    MMAP_ENTRY(getDeftemplateWatch, g_getDeftemplateWatch),
+    MMAP_ENTRY(getNextDeftemplate, g_getNextDeftemplate),
+    MMAP_ENTRY(isDeftemplateDeletable, g_isDeftemplateDeletable),
+    MMAP_ENTRY(listDeftemplates, g_listDeftemplates),
+    MMAP_ENTRY(setDeftemplateWatch, g_setDeftemplateWatch),
+    MMAP_ENTRY(undeftemplate, g_undeftemplate),
+    MMAP_ENTRY(assertFact, g_assertFact),
+    MMAP_ENTRY(assertString, g_assertString),
+    MMAP_ENTRY(assignFactSlotDefaults, g_assignFactSlotDefaults),
+    MMAP_ENTRY(createFact, g_createFact),
+    MMAP_ENTRY(decrementFactCount, g_decrementFactCount),
+    MMAP_ENTRY(factIndex, g_factIndex),
+    MMAP_ENTRY(facts, g_facts),
+    MMAP_ENTRY(getFactDuplication, g_getFactDuplication),
+    MMAP_ENTRY(getFactListChanged, g_getFactListChanged),
+    MMAP_ENTRY(getFactPPForm, g_getFactPPForm),
+    MMAP_ENTRY(getFactSlot, g_getFactSlot),
+    MMAP_ENTRY(getNextFact, g_getNextFact),
+    MMAP_ENTRY(getNextFactInTemplate, g_getNextFactInTemplate),
+    MMAP_ENTRY(incrementFactCount, g_incrementFactCount),
+    MMAP_ENTRY(loadFacts, g_loadFacts),
+    MMAP_ENTRY(ppFact, g_ppFact),
+    MMAP_ENTRY(putFactSlot, g_putFactSlot),
+    MMAP_ENTRY(retract, g_retract),
+    MMAP_ENTRY(saveFacts, g_saveFacts),
+    MMAP_ENTRY(setFactDuplication, g_setFactDuplication),
+    MMAP_ENTRY(setFactListChanged, g_setFactListChanged),
+    MMAP_ENTRY(factDeftemplate, g_factDeftemplate),
+    MMAP_ENTRY(factExistp, g_factExistp),
+    MMAP_ENTRY(factSlotNames, g_factSlotNames),
+    MMAP_ENTRY(getFactList, g_getFactList),
+    MMAP_ENTRY(loadFactsFromString, g_loadFactsFromString),
+    MMAP_ENTRY(deffactsModule, g_deffactsModule),
+    MMAP_ENTRY(findDeffacts, g_findDeffacts),
+    MMAP_ENTRY(getDeffactsList, g_getDeffactsList),
+    MMAP_ENTRY(getDeffactsName, g_getDeffactsName),
+    MMAP_ENTRY(getDeffactsPPForm, g_getDeffactsPPForm),
+    MMAP_ENTRY(getNextDeffacts, g_getNextDeffacts),
+    MMAP_ENTRY(isDeffactsDeletable, g_isDeffactsDeletable),
+    MMAP_ENTRY(listDeffacts, g_listDeffacts),
+    MMAP_ENTRY(undeffacts, g_undeffacts),
+    MMAP_ENTRY(defruleHasBreakpoint, g_defruleHasBreakpoint),
+    MMAP_ENTRY(defruleModule, g_defruleModule),
+    MMAP_ENTRY(findDefrule, g_findDefrule),
+    MMAP_ENTRY(getDefruleList, g_getDefruleList),
+    MMAP_ENTRY(getDefruleName, g_getDefruleName),
+    MMAP_ENTRY(getDefrulePPForm, g_getDefrulePPForm),
+    MMAP_ENTRY(getDefruleWatchActivations, g_getDefruleWatchActivations),
+    MMAP_ENTRY(getDefruleWatchFirings, g_getDefruleWatchFirings),
+    MMAP_ENTRY(getIncrementalReset, g_getIncrementalReset),
+    MMAP_ENTRY(getNextDefrule, g_getNextDefrule),
+    MMAP_ENTRY(isDefruleDeletable, g_isDefruleDeletable),
+    MMAP_ENTRY(listDefrules, g_listDefrules),
+    MMAP_ENTRY(matches, g_matches),
+    MMAP_ENTRY(refresh, g_refresh),
+    MMAP_ENTRY(removeBreak, g_removeBreak),
+    MMAP_ENTRY(setBreak, g_setBreak),
+    MMAP_ENTRY(setDefruleWatchActivations, g_setDefruleWatchActivations),
+    MMAP_ENTRY(setDefruleWatchFirings, g_setDefruleWatchFirings),
+    MMAP_ENTRY(setIncrementalReset, g_setIncrementalReset),
+    MMAP_ENTRY(showBreaks, g_showBreaks),
+    MMAP_ENTRY(undefrule, g_undefrule),
+    MMAP_ENTRY(addRunFunction, g_addRunFunction),
+    MMAP_ENTRY(agenda, g_agenda),
+    MMAP_ENTRY(clearFocusStack, g_clearFocusStack),
+    MMAP_ENTRY(deleteActivation, g_deleteActivation),
+    MMAP_ENTRY(focus, g_focus),
+    MMAP_ENTRY(getActivationName, g_getActivationName),
+    MMAP_ENTRY(getActivationPPForm, g_getActivationPPForm),
+    MMAP_ENTRY(getActivationSalience, g_getActivationSalience),
+    MMAP_ENTRY(getAgendaChanged, g_getAgendaChanged),
+    MMAP_ENTRY(getFocus, g_getFocus),
+    MMAP_ENTRY(getFocusStack, g_getFocusStack),
+    MMAP_ENTRY(getNextActivation, g_getNextActivation),
+    MMAP_ENTRY(getSalienceEvaluation, g_getSalienceEvaluation),
+    MMAP_ENTRY(getStrategy, g_getStrategy),
+    MMAP_ENTRY(listFocusStack, g_listFocusStack),
+    MMAP_ENTRY(popFocus, g_popFocus),
+    MMAP_ENTRY(refreshAgenda, g_refreshAgenda),
+    MMAP_ENTRY(removeRunFunction, g_removeRunFunction),
+    MMAP_ENTRY(reorderAgenda, g_reorderAgenda),
+    MMAP_ENTRY(run, g_run),
+    MMAP_ENTRY(setActivationSalience, g_setActivationSalience),
+    MMAP_ENTRY(setAgendaChanged, g_setAgendaChanged),
+    MMAP_ENTRY(setSalienceEvaluation, g_setSalienceEvaluation),
+    MMAP_ENTRY(setStrategy, g_setStrategy),
+    MMAP_ENTRY(defglobalModule, g_defglobalModule),
+    MMAP_ENTRY(findDefglobal, g_findDefglobal),
+    MMAP_ENTRY(getDefglobalList, g_getDefglobalList),
+    MMAP_ENTRY(getDefglobalName, g_getDefglobalName),
+    MMAP_ENTRY(getDefglobalPPForm, g_getDefglobalPPForm),
+    MMAP_ENTRY(getDefglobalValue, g_getDefglobalValue),
+    MMAP_ENTRY(getDefglobalValueForm, g_getDefglobalValueForm),
+    MMAP_ENTRY(getDefglobalWatch, g_getDefglobalWatch),
+    MMAP_ENTRY(getGlobalsChanged, g_getGlobalsChanged),
+    MMAP_ENTRY(getNextDefglobal, g_getNextDefglobal),
+    MMAP_ENTRY(getResetGlobals, g_getResetGlobals),
+    MMAP_ENTRY(isDefglobalDeletable, g_isDefglobalDeletable),
+    MMAP_ENTRY(listDefglobals, g_listDefglobals),
+    MMAP_ENTRY(setDefglobalValue, g_setDefglobalValue),
+    MMAP_ENTRY(setDefglobalWatch, g_setDefglobalWatch),
+    MMAP_ENTRY(setGlobalsChanged, g_setGlobalsChanged),
+    MMAP_ENTRY(setResetGlobals, g_setResetGlobals),
+    MMAP_ENTRY(showDefglobals, g_showDefglobals),
+    MMAP_ENTRY(undefglobal, g_undefglobal),
+    MMAP_ENTRY(deffunctionModule, g_deffunctionModule),
+    MMAP_ENTRY(findDeffunction, g_findDeffunction),
+    MMAP_ENTRY(getDeffunctionList, g_getDeffunctionList),
+    MMAP_ENTRY(getDeffunctionName, g_getDeffunctionName),
+    MMAP_ENTRY(getDeffunctionPPForm, g_getDeffunctionPPForm),
+    MMAP_ENTRY(getDeffunctionWatch, g_getDeffunctionWatch),
+    MMAP_ENTRY(getNextDeffunction, g_getNextDeffunction),
+    MMAP_ENTRY(isDeffunctionDeletable, g_isDeffunctionDeletable),
+    MMAP_ENTRY(listDeffunctions, g_listDeffunctions),
+    MMAP_ENTRY(setDeffunctionWatch, g_setDeffunctionWatch),
+    MMAP_ENTRY(undeffunction, g_undeffunction),
+    MMAP_ENTRY(defgenericModule, g_defgenericModule),
+    MMAP_ENTRY(findDefgeneric, g_findDefgeneric),
+    MMAP_ENTRY(getDefgenericList, g_getDefgenericList),
+    MMAP_ENTRY(getDefgenericName, g_getDefgenericName),
+    MMAP_ENTRY(getDefgenericPPForm, g_getDefgenericPPForm),
+    MMAP_ENTRY(getDefgenericWatch, g_getDefgenericWatch),
+    MMAP_ENTRY(getNextDefgeneric, g_getNextDefgeneric),
+    MMAP_ENTRY(isDefgenericDeletable, g_isDefgenericDeletable),
+    MMAP_ENTRY(listDefgenerics, g_listDefgenerics),
+    MMAP_ENTRY(setDefgenericWatch, g_setDefgenericWatch),
+    MMAP_ENTRY(undefgeneric, g_undefgeneric),
+    MMAP_ENTRY(getDefmethodDescription, g_getDefmethodDescription),
+    MMAP_ENTRY(getDefmethodList, g_getDefmethodList),
+    MMAP_ENTRY(getDefmethodPPForm, g_getDefmethodPPForm),
+    MMAP_ENTRY(getDefmethodWatch, g_getDefmethodWatch),
+    MMAP_ENTRY(getMethodRestrictions, g_getMethodRestrictions),
+    MMAP_ENTRY(getNextDefmethod, g_getNextDefmethod),
+    MMAP_ENTRY(isDefmethodDeletable, g_isDefmethodDeletable),
+    MMAP_ENTRY(listDefmethods, g_listDefmethods),
+    MMAP_ENTRY(setDefmethodWatch, g_setDefmethodWatch),
+    MMAP_ENTRY(undefmethod, g_undefmethod),
+    MMAP_ENTRY(browseClasses, g_browseClasses),
+    MMAP_ENTRY(classAbstractP, g_classAbstractP),
+    MMAP_ENTRY(classReactiveP, g_classReactiveP),
+    MMAP_ENTRY(classSlots, g_classSlots),
+    MMAP_ENTRY(classSubclasses, g_classSubclasses),
+    MMAP_ENTRY(classSuperclasses, g_classSuperclasses),
+    MMAP_ENTRY(defclassModule, g_defclassModule),
+    MMAP_ENTRY(describeClass, g_describeClass),
+    MMAP_ENTRY(findDefclass, g_findDefclass),
+    MMAP_ENTRY(getClassDefaultsMode, g_getClassDefaultsMode),
+    MMAP_ENTRY(getDefclassList, g_getDefclassList),
+    MMAP_ENTRY(getDefclassName, g_getDefclassName),
+    MMAP_ENTRY(getDefclassPPForm, g_getDefclassPPForm),
+    MMAP_ENTRY(getDefclassWatchInstances, g_getDefclassWatchInstances),
+    MMAP_ENTRY(getDefclassWatchSlots, g_getDefclassWatchSlots),
+    MMAP_ENTRY(getNextDefclass, g_getNextDefclass),
+    MMAP_ENTRY(isDefclassDeletable, g_isDefclassDeletable),
+    MMAP_ENTRY(listDefclasses, g_listDefclasses),
+    MMAP_ENTRY(setClassDefaultsMode, g_setClassDefaultsMode),
+    MMAP_ENTRY(setDefclassWatchInstances, g_setDefclassWatchInstances),
+    MMAP_ENTRY(setDefclassWatchSlots, g_setDefclassWatchSlots),
+    MMAP_ENTRY(slotAllowedValues, g_slotAllowedValues),
+    MMAP_ENTRY(slotCardinality, g_slotCardinality),
+    MMAP_ENTRY(slotAllowedClasses, g_slotAllowedClasses),
+    MMAP_ENTRY(slotDefaultValue, g_slotDefaultValue),
+    MMAP_ENTRY(slotDirectAccessP, g_slotDirectAccessP),
+    MMAP_ENTRY(slotExistP, g_slotExistP),
+    MMAP_ENTRY(slotFacets, g_slotFacets),
+    MMAP_ENTRY(slotInitableP, g_slotInitableP),
+    MMAP_ENTRY(slotPublicP, g_slotPublicP),
+    MMAP_ENTRY(slotRange, g_slotRange),
+    MMAP_ENTRY(slotSources, g_slotSources),
+    MMAP_ENTRY(slotTypes, g_slotTypes),
+    MMAP_ENTRY(slotWritableP, g_slotWritableP),
+    MMAP_ENTRY(subclassP, g_subclassP),
+    MMAP_ENTRY(superclassP, g_superclassP),
+    MMAP_ENTRY(undefclass, g_undefclass),
+    MMAP_ENTRY(binaryLoadInstances, g_binaryLoadInstances),
+    MMAP_ENTRY(binarySaveInstances, g_binarySaveInstances),
+    MMAP_ENTRY(createRawInstance, g_createRawInstance),
+    MMAP_ENTRY(decrementInstanceCount, g_decrementInstanceCount),
+    MMAP_ENTRY(deleteInstance, g_deleteInstance),
+    MMAP_ENTRY(directGetSlot, g_directGetSlot),
+    MMAP_ENTRY(directPutSlot, g_directPutSlot),
+    MMAP_ENTRY(findInstance, g_findInstance),
+    MMAP_ENTRY(getInstanceClass, g_getInstanceClass),
+    MMAP_ENTRY(getInstanceName, g_getInstanceName),
+    MMAP_ENTRY(getInstancePPForm, g_getInstancePPForm),
+    MMAP_ENTRY(getInstancesChanged, g_getInstancesChanged),
+    MMAP_ENTRY(getNextInstance, g_getNextInstance),
+    MMAP_ENTRY(getNextInstanceInClass, g_getNextInstanceInClass),
+    MMAP_ENTRY(getNextInstanceInClassAndSubclasses, g_getNextInstanceInClassAndSubclasses),
+    MMAP_ENTRY(incrementInstanceCount, g_incrementInstanceCount),
+    MMAP_ENTRY(instances, g_instances),
+    MMAP_ENTRY(loadInstances, g_loadInstances),
+    MMAP_ENTRY(makeInstance, g_makeInstance),
+    MMAP_ENTRY(restoreInstances, g_restoreInstances),
+    MMAP_ENTRY(saveInstances, g_saveInstances),
+    MMAP_ENTRY(send, g_send),
+    MMAP_ENTRY(setInstancesChanged, g_setInstancesChanged),
+    MMAP_ENTRY(unmakeInstance, g_unmakeInstance),
+    MMAP_ENTRY(validInstanceAddress, g_validInstanceAddress),
+    MMAP_ENTRY(loadInstancesFromString, g_loadInstancesFromString),
+    MMAP_ENTRY(restoreInstancesFromString, g_restoreInstancesFromString),
+    MMAP_ENTRY(findDefmessageHandler, g_findDefmessageHandler),
+    MMAP_ENTRY(getDefmessageHandlerList, g_getDefmessageHandlerList),
+    MMAP_ENTRY(getDefmessageHandlerName, g_getDefmessageHandlerName),
+    MMAP_ENTRY(getDefmessageHandlerPPForm, g_getDefmessageHandlerPPForm),
+    MMAP_ENTRY(getDefmessageHandlerType, g_getDefmessageHandlerType),
+    MMAP_ENTRY(getDefmessageHandlerWatch, g_getDefmessageHandlerWatch),
+    MMAP_ENTRY(getNextDefmessageHandler, g_getNextDefmessageHandler),
+    MMAP_ENTRY(isDefmessageHandlerDeletable, g_isDefmessageHandlerDeletable),
+    MMAP_ENTRY(listDefmessageHandlers, g_listDefmessageHandlers),
+    MMAP_ENTRY(previewSend, g_previewSend),
+    MMAP_ENTRY(setDefmessageHandlerWatch, g_setDefmessageHandlerWatch),
+    MMAP_ENTRY(undefmessageHandler, g_undefmessageHandler),
+    MMAP_ENTRY(definstancesModule, g_definstancesModule),
+    MMAP_ENTRY(findDefinstances, g_findDefinstances),
+    MMAP_ENTRY(getDefinstancesList, g_getDefinstancesList),
+    MMAP_ENTRY(getDefinstancesName, g_getDefinstancesName),
+    MMAP_ENTRY(getDefinstancesPPForm, g_getDefinstancesPPForm),
+    MMAP_ENTRY(getNextDefinstances, g_getNextDefinstances),
+    MMAP_ENTRY(isDefinstancesDeletable, g_isDefinstancesDeletable),
+    MMAP_ENTRY(listDefinstances, g_listDefinstances),
+    MMAP_ENTRY(undefinstances, g_undefinstances),
+    MMAP_ENTRY(findDefmodule, g_findDefmodule),
+    MMAP_ENTRY(getCurrentModule, g_getCurrentModule),
+    MMAP_ENTRY(getDefmoduleList, g_getDefmoduleList),
+    MMAP_ENTRY(getDefmoduleName, g_getDefmoduleName),
+    MMAP_ENTRY(getDefmodulePPForm, g_getDefmodulePPForm),
+    MMAP_ENTRY(getNextDefmodule, g_getNextDefmodule),
+    MMAP_ENTRY(listDefmodules, g_listDefmodules),
+    MMAP_ENTRY(setCurrentModule, g_setCurrentModule),
+    MMAP_ENTRY(setCurrentModule, g_setCurrentModule),
+    MMAP_ENTRY(sendCommand, g_sendCommand),
+    MMAP_ENTRY(removeClearFunction, g_removeClearFunction),
+    MMAP_ENTRY(removePeriodicFunction, g_removePeriodicFunction),
+    MMAP_ENTRY(removeResetFunction, g_removeResetFunction),
+    MMAP_ENTRY(forceCleanup, g_forceCleanup),
+
+/* -------------------------------------------------------------------- */
+
     MMAP_ENTRY(env_addClearFunction, e_addClearFunction),
     MMAP_ENTRY(env_addPeriodicFunction, e_addPeriodicFunction),
     MMAP_ENTRY(env_addResetFunction, e_addResetFunction),
@@ -11592,6 +19512,10 @@ PYFUNC
 PyMODINIT_FUNC
 init_clips(void) {
     PyObject *m = NULL, *d = NULL;
+#ifdef USE_NONASSERT_CLIPSGCLOCK
+    void *e = NULL;
+    LOPTR_ITEM ***hm = NULL;
+#endif /* USE_NONASSERT_CLIPSGCLOCK */
     PREPARE_DEALLOC_ENV();
 
     /* give the module a method map */
@@ -11699,6 +19623,26 @@ init_clips(void) {
      *  the problem.
      *  TODO: a "more elegant way" to notify the user.
      */
+
+    /* we should initialize CLIPS environment once module is loaded */
+    InitializeEnvironment();
+
+#ifdef USE_NONASSERT_CLIPSGCLOCK
+    e = GetCurrentEnvironment();
+    AllocateEnvironmentData(e, STRAYFACTS_DATA, sizeof(LOPTR_ITEM ***), NULL);
+    /* STRAYFACTS_DATA will contain just a copy of the pointer to the map */
+    hm = (LOPTR_ITEM ***)GetEnvironmentData(e, STRAYFACTS_DATA);
+    *hm = clips_StrayFacts;     /* no real thin ice, it was allocated */
+#endif /* USE_NONASSERT_CLIPSGCLOCK */
+
+    /* add the Python router to the engine */
+    AddRouter("python", 0,
+              clips_queryFunction,
+              clips_printFunction,
+              clips_getcFunction,
+              clips_ungetcFunction,
+              clips_exitFunction);
+    ActivateRouter("python");
 
 }
 

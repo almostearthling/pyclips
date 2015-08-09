@@ -1,7 +1,7 @@
 # test_toplev.py
 
 
-"""revision $Id: test_toplev.py 368 2008-12-23 01:18:54Z Franz $
+"""revision $Id: test_toplev.py 321 2006-10-10 16:22:00Z Franz $
 TESTS:
 BatchStar
 AgendaChanged
@@ -174,19 +174,18 @@ class ctc_Toplevel(ctestcase):
             self.assert_(e.FindInstance("i2"))
 
 
-# this test makes no sense anymore
-#    def ctf_TopCurrentEnvironment_01(self):
-#        """Testing: CurrentEnvironment, Environment.SetCurrent, Environment.Index"""
-#        clips.Clear()
-#        clips.Assert("(duck)")
-#        ce = clips.CurrentEnvironment()
-#        e = clips.Environment()
-#        self.assert_(e.Index != ce.Index)
-#        e.SetCurrent()
-#        clips.Reset()
-#        ce.SetCurrent()
-#        f = clips.FactList()[0]
-#        self.assertEqual(f.CleanPPForm(), "(duck)")
+    def ctf_TopCurrentEnvironment_01(self):
+        """Testing: CurrentEnvironment, Environment.SetCurrent, Environment.Index"""
+        clips.Clear()
+        clips.Assert("(duck)")
+        ce = clips.CurrentEnvironment()
+        e = clips.Environment()
+        self.assert_(e.Index != ce.Index)
+        e.SetCurrent()
+        clips.Reset()
+        ce.SetCurrent()
+        f = clips.FactList()[0]
+        self.assertEqual(f.CleanPPForm(), "(duck)")
 
 
 
