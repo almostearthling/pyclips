@@ -1,0 +1,79 @@
+--- ../clipssrc0624_orig/objrtmch.c	Thu Jun 15 12:04:00 2006
++++ ../clipssrc/objrtmch.c	Fri Jun 23 15:17:46 2006
+@@ -1,7 +1,7 @@
+    /*******************************************************/
+    /*      "C" Language Integrated Production System      */
+    /*                                                     */
+-   /*               CLIPS Version 6.24  05/17/06          */
++   /*               CLIPS Version 6.25  06/22/06          */
+    /*                                                     */
+    /*          OBJECT PATTERN MATCHER MODULE              */
+    /*******************************************************/
+@@ -25,6 +25,14 @@
+ /*                                                            */
+ /*            Renamed BOOLEAN macro type to intBool.          */
+ /*                                                            */
++/*      6.25: Modified the QueueObjectMatchAction function    */
++/*            so that instance retract actions always occur   */
++/*            before instance assert and modify actions.      */
++/*            This prevents the pattern matching process      */
++/*            from attempting the evaluation of a join        */
++/*            expression that accesses the slots of a         */
++/*            retracted instance.                             */
++/*                                                            */
+ /**************************************************************/
+ /* =========================================
+    *****************************************
+@@ -393,6 +401,7 @@
+   int slotNameID)
+   {
+    OBJECT_MATCH_ACTION *prv,*cur,*newMatch;
++   OBJECT_MATCH_ACTION *prvRetract = NULL; /* DR0873 */
+ 
+    prv = NULL;
+    cur = ObjectReteData(theEnv)->ObjectMatchActionQueue;
+@@ -463,6 +472,9 @@
+ 
+          return;
+         }
++        
++      if (cur->type == OBJECT_RETRACT) /* DR0873 */ 
++        { prvRetract = cur; }          /* DR0873 */
+       prv = cur;
+       cur = cur->nxt;
+      }
+@@ -473,11 +485,33 @@
+       ================================================ */
+    newMatch = get_struct(theEnv,objectMatchAction);
+    newMatch->type = type;
+-   newMatch->nxt = cur;
++   newMatch->nxt = NULL; /* If we get here, cur should be NULL */
+    newMatch->slotNameIDs = (type != OBJECT_MODIFY) ? NULL :
+                        QueueModifySlotMap(theEnv,NULL,slotNameID);
+    newMatch->ins = ins;
+    newMatch->ins->busy++;
++   
++   /* DR0873 Begin */
++   /* Retract operations must be processed before assert and   */
++   /* modify actions, otherwise the pattern matching process   */
++   /* might attempt to access the slots of a retract instance. */
++
++   if (type == OBJECT_RETRACT)
++     {
++      if (prvRetract == NULL)
++        {
++         newMatch->nxt = ObjectReteData(theEnv)->ObjectMatchActionQueue;
++         ObjectReteData(theEnv)->ObjectMatchActionQueue = newMatch;
++        }
++      else
++        {
++         newMatch->nxt = prvRetract->nxt;
++         prvRetract->nxt = newMatch;
++        }
++     }
++   else
++   /* DR0873 End */
++   
+    if (prv == NULL)
+      ObjectReteData(theEnv)->ObjectMatchActionQueue = newMatch;
+    else

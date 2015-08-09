@@ -1,0 +1,32 @@
+--- ../clipssrc_orig/evaluatn.h	Sat May 29 13:22:00 2004
++++ ../clipssrc/evaluatn.h	Sun May 28 20:09:14 2006
+@@ -84,10 +84,10 @@
+ #define GetDOEnd(target)          ((target).end + 1)
+ #define GetpDOBegin(target)       ((target)->begin + 1)
+ #define GetpDOEnd(target)         ((target)->end + 1)
+-#define SetDOBegin(target,val)   ((target).begin = (long) ((val) - 1))
+-#define SetDOEnd(target,val)     ((target).end = (long) ((val) - 1))
+-#define SetpDOBegin(target,val)   ((target)->begin = (long) ((val) - 1))
+-#define SetpDOEnd(target,val)     ((target)->end = (long) ((val) - 1))
++#define SetDOBegin(target,val)   ((target).begin = (long) ((long)(val) - 1))
++#define SetDOEnd(target,val)     ((target).end = (long) ((long)(val) - 1))
++#define SetpDOBegin(target,val)   ((target)->begin = (long) ((long)(val) - 1))
++#define SetpDOEnd(target,val)     ((target)->end = (long) ((long)(val) - 1))
+ 
+ #define EnvGetDOLength(theEnv,target)       (((target).end - (target).begin) + 1)
+ #define EnvGetpDOLength(theEnv,target)      (((target)->end - (target)->begin) + 1)
+@@ -95,10 +95,10 @@
+ #define EnvGetDOEnd(theEnv,target)          ((target).end + 1)
+ #define EnvGetpDOBegin(theEnv,target)       ((target)->begin + 1)
+ #define EnvGetpDOEnd(theEnv,target)         ((target)->end + 1)
+-#define EnvSetDOBegin(theEnv,target,val)   ((target).begin = (long) ((val) - 1))
+-#define EnvSetDOEnd(theEnv,target,val)     ((target).end = (long) ((val) - 1))
+-#define EnvSetpDOBegin(theEnv,target,val)   ((target)->begin = (long) ((val) - 1))
+-#define EnvSetpDOEnd(theEnv,target,val)     ((target)->end = (long) ((val) - 1))
++#define EnvSetDOBegin(theEnv,target,val)   ((target).begin = (long) ((long)(val) - 1))
++#define EnvSetDOEnd(theEnv,target,val)     ((target).end = (long) ((long)(val) - 1))
++#define EnvSetpDOBegin(theEnv,target,val)   ((target)->begin = (long) ((long)(val) - 1))
++#define EnvSetpDOEnd(theEnv,target,val)     ((target)->end = (long) ((long)(val) - 1))
+ 
+ #define DOPToString(target) (((struct symbolHashNode *) ((target)->value))->contents)
+ #define DOPToDouble(target) (((struct floatHashNode *) ((target)->value))->contents)

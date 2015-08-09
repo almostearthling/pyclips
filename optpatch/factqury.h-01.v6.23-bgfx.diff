@@ -1,0 +1,20 @@
+--- ../clipssrc_orig/factqury.h	Wed Jan 19 19:11:38 2005
++++ ../clipssrc/factqury.h	Sun Jan 22 15:48:08 2006
+@@ -18,6 +18,8 @@
+ /* Revision History:                                         */
+ /*      6.23: Added fact-set queries.                        */
+ /*                                                           */
++/*      6.24: Corrected errors when compiling as a C++ file. */
++/*                                                           */
+ /*************************************************************/
+ 
+ #ifndef _H_factqury
+@@ -31,7 +33,7 @@
+ 
+ typedef struct query_template
+   {
+-   struct deftemplate *template;
++   struct deftemplate *templatePtr;
+    struct query_template *chain, *nxt;
+   } QUERY_TEMPLATE;
+ 

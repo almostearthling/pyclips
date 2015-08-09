@@ -1,0 +1,22 @@
+--- ../clipssrc_orig/genrcpsr.c	Mon Jun 16 20:35:00 2003
++++ ../clipssrc/genrcpsr.c	Wed May 31 15:40:25 2006
+@@ -283,6 +283,19 @@
+    actions = ParseProcActions(theEnv,"method",readSource,
+                               &DefgenericData(theEnv)->GenericInputToken,params,wildcard,
+                               NULL,NULL,&lvars,NULL);
++
++   /*===========================================================*/
++   /* Check for the closing right parenthesis of the defmethod. */
++   /*===========================================================*/
++
++   if ((DefgenericData(theEnv)->GenericInputToken.type != RPAREN) && /* DR0872 */
++       (actions != NULL))
++     {
++      DeleteTempRestricts(theEnv,params);
++      ReturnPackedExpression(theEnv,actions);
++      goto DefmethodParseError;
++     }
++
+    if (actions == NULL)
+      {
+       DeleteTempRestricts(theEnv,params);

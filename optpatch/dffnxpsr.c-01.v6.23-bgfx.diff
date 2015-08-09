@@ -1,0 +1,37 @@
+--- ../clipssrc_orig/dffnxpsr.c	Mon May 31 11:06:00 2004
++++ ../clipssrc/dffnxpsr.c	Wed May 31 15:38:28 2006
+@@ -165,6 +165,34 @@
+    actions = ParseProcActions(theEnv,"deffunction",readSource,
+                               &DeffunctionData(theEnv)->DFInputToken,parameterList,wildcard,
+                               NULL,NULL,&lvars,NULL);
++
++   /*=============================================================*/
++   /* Check for the closing right parenthesis of the deffunction. */
++   /*=============================================================*/
++
++   if ((DeffunctionData(theEnv)->DFInputToken.type != RPAREN) && /* DR0872 */
++       (actions != NULL))
++     {
++      SyntaxErrorMessage(theEnv,"deffunction");
++     
++      ReturnExpression(theEnv,parameterList);
++      ReturnPackedExpression(theEnv,actions);
++
++      if (overwrite)
++        {
++         dptr->minNumberOfParameters = owMin;
++         dptr->maxNumberOfParameters = owMax;
++        }
++
++      if ((dptr->busy == 0) && (! overwrite))
++        {
++         RemoveConstructFromModule(theEnv,(struct constructHeader *) dptr);
++         RemoveDeffunction(theEnv,dptr);
++        }
++
++      return(TRUE);
++     }
++
+    if (actions == NULL)
+      {
+       ReturnExpression(theEnv,parameterList);

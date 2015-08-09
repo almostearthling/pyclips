@@ -1,0 +1,24 @@
+--- ../clipssrc0624_orig/memalloc.c	Thu Jun 15 12:04:00 2006
++++ ../clipssrc/memalloc.c	Fri Jun 16 22:39:29 2006
+@@ -53,6 +53,21 @@
+ 
+ #define STRICT_ALIGN_SIZE sizeof(double)
+ 
++
++/* use Python memory allocator when compiling PyCLIPS */
++#ifdef PYCLIPS
++#include <Python.h>
++void *PyCLIPS_Malloc(size_t s);
++void PyCLIPS_Free(void *p);
++#if !BLOCK_MEMORY
++   #undef malloc
++   #define malloc PyCLIPS_Malloc
++   #undef free
++   #define free PyCLIPS_Free
++#endif /* BLOCK_MEMORY */
++#endif /* PYCLIPS */
++
++
+ #define SpecialMalloc(sz) malloc((STD_SIZE) sz)
+ #define SpecialFree(ptr) free(ptr)
+ 

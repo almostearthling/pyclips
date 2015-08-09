@@ -1,0 +1,71 @@
+% $Id: pyclips.tex 342 2008-02-22 01:17:23Z Franz $
+\documentclass{manual}
+
+\input{defs}
+
+\title{\pyclips{} Manual}
+
+\author{Francesco Garosi}
+
+% Please at least include a long-lived email address;
+% the rest is at your discretion.
+\authoraddress{
+    E-mail: \email{franz -dot- g -at- tin -dot- it}
+}
+
+% do not mess with the 2 lines below, they are written by make dist
+\release{1.0}
+\date{Feb 22, 2008}
+
+\makeindex
+
+\begin{document}
+
+\maketitle
+
+% This makes the contents accessible from the front page of the HTML.
+\ifhtml
+\chapter*{Front Matter\label{front}}
+\fi
+
+\input{copyright}
+
+\begin{abstract}
+
+\noindent
+This manual documents the high-level interface to the CLIPS system
+provided by the \pyclips{} module. This module allows the creation of a
+fully-functional CLIPS environment in a Python session, thus providing
+access to a well-known expert systems shell programmatically.
+
+\pyclips{} incorporates most of the API bindings documented in the
+\clipsapg{} (freely downloadable from the CLIPS web site, see below) and
+embeds these bindings in an Object Oriented layer, incorporating most
+CLIPS constructs into Python classes. Instances of these classes allow
+access to the status and functionality of the corresponding CLIPS objects.
+
+\end{abstract}
+
+\note{This manual is not intended to be a documentation of CLIPS itself.
+CLIPS is extensively documented in several manuals, which are available on
+the CLIPS website (see below). A comprehensive tutorial for CLIPS can also
+be downloaded. A reasonable knowledge of the CLIPS system is necessary
+to understand and use this module.}
+
+\begin{seealso}
+  \seetitle[http://www.python.org/]
+	{Python Language Web Site}{for information on the Python language}
+  \seetitle[http://www.ghg.net/clips/CLIPS.html]
+	{CLIPS system web site}{for information on the CLIPS system}
+\end{seealso}
+
+\tableofcontents
+
+\input{intro}		% Introduction
+\input{contents}	% Module Contents
+\input{objects}		% Provided Objects
+\input{appendix}        % Appendix and Notes
+
+\input{license}	        % License Information
+
+\end{document}

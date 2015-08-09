@@ -1,0 +1,17 @@
+--- ../clipssrc0624_orig/evaluatn.h	Thu Jun 15 12:04:00 2006
++++ ../clipssrc/evaluatn.h	Fri Jun 16 19:56:07 2006
+@@ -88,10 +88,10 @@
+ #define GetDOEnd(target)          ((target).end + 1)
+ #define GetpDOBegin(target)       ((target)->begin + 1)
+ #define GetpDOEnd(target)         ((target)->end + 1)
+-#define SetDOBegin(target,val)   ((target).begin = (long) ((val) - 1))
+-#define SetDOEnd(target,val)     ((target).end = (long) ((val) - 1))
+-#define SetpDOBegin(target,val)   ((target)->begin = (long) ((val) - 1))
+-#define SetpDOEnd(target,val)     ((target)->end = (long) ((val) - 1))
++#define SetDOBegin(target,val)   ((target).begin = (long) ((long)(val) - 1))
++#define SetDOEnd(target,val)     ((target).end = (long) ((long)(val) - 1))
++#define SetpDOBegin(target,val)   ((target)->begin = (long) ((long)(val) - 1))
++#define SetpDOEnd(target,val)     ((target)->end = (long) ((long)(val) - 1))
+ 
+ #define EnvGetDOLength(theEnv,target)       (((target).end - (target).begin) + 1)
+ #define EnvGetpDOLength(theEnv,target)      (((target)->end - (target)->begin) + 1)

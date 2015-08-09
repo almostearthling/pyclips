@@ -1,0 +1,537 @@
+% $Id: intro.tex 346 2008-02-25 00:39:00Z Franz $
+\chapter{Introduction\label{introduction}}
+
+\section{Overview\label{pyclips-overview}}
+
+This module aims to embed a fully functional CLIPS engine in Python, and
+to give to the developer a more Python-compliant interface to CLIPS
+without cutting down on functionalities. In fact CLIPS is compiled into
+the module in its entirety, and most API functions are bound to Python
+methods. However the direct bindings to the CLIPS library (implemented
+as the \module{_clips} submodule) are not described here: each function
+is described by an appropriate documentation string, and accessible by
+means of the \function{help()} function or through the \program{pydoc}
+tool. Each direct binding maps to an API provided function. For a
+detailed reference\footnote{The order of parameters is changed sometimes,
+in order to allow a more intuitive use of default parameters in the
+Python interface: however the meaning of each parameter is described
+in the function documentation string, and it should not be difficult
+for the programmer to correctly understand the relationship between a
+module function and the corresponding CLIPS API.} for these functions
+see \clipsapg{}, available for download at the CLIPS website.
+
+\pyclips{} is also capable of generating CLIPS text and binary files:
+this allows the user to interact with sessions of the CLIPS system
+itself.
+
+An important thing to know, is that \pyclips{} implements CLIPS as a
+separated\footnote{This has an impact on the way the module can be used,
+as the engine is only set up once when the module is \code{import}ed the
+first time.} engine: in the CLIPS module implementation, CLIPS
+``lives'' in its own memory space, allocates its own objects. The module
+only provides a way to send information and commands to this engine
+and to retrieve results from it.
+
+
+\subsection{Structure\label{pyclips-ov-structure}}
+
+\pyclips{} is organized in a package providing several classes and
+top-level functions. Also, the module provides some objects that are
+already instanced and give access to some of the CLIPS internal
+functions and structures, including debug status and engine I/O.
+
+CLIPS is accessible through these classes and functions, that send
+appropriate commands to the underlying engine and retrieve the
+available information. Many of the CLIPS classes, constructs and
+objects are shadowed by Python classes and objects. However, whereas
+\pyclips{} classes provide a comfortable way to create objects that
+reference the actual engine objects, there is no one-to-one
+mapping between the two memory spaces: for instance, when a Python
+object is deleted (via the \keyword{del} command), the corresponding
+CLIPS object will still remain alive in the CLIPS memory space. An
+appropriate command is necessary to remove the object from the
+underlying engine, and this is provided by the module interface.
+
+
+\subsection{Interactive Usage\label{pyclips-ov-interactive}}
+
+The \pyclips{} package can also be used interactively, since it can
+inspect an underlying CLIPS session and give some of the output that
+CLIPS usually provides when used as an interactive shell.
+
+A simple interactive session with \pyclips{} follows:
+
+\begin{verbatim}
+>>> import clips
+>>> clips.Reset()
+>>> clips.Assert("(duck)")
+<Fact 'f-1': fact object at 0x00DE4AE0>
+>>> clips.BuildRule("duck-rule", "(duck)", "(assert (quack))", "the Duck Rule")
+<Rule 'duck-rule': defrule object at 0x00DA7E00>
+>>> clips.PrintRules()
+MAIN:
+duck-rule
+>>> clips.PrintAgenda()
+MAIN:
+   0      duck-rule: f-1
+For a total of 1 activation.
+>>> clips.PrintFacts()
+f-0     (initial-fact)
+f-1     (duck)
+For a total of 2 facts.
+>>> clips.Run()
+>>> clips.PrintFacts()
+f-0     (initial-fact)
+f-1     (duck)
+f-2     (quack)
+For a total of 3 facts.
+\end{verbatim}
+
+Users of the CLIPS interactive shell will find the \pyclips{} output
+quite familiar. In fact the \function{Print\emph{<object>}()} functions
+are provided for interactive use, and retrieve their output directly from
+the underlying CLIPS engine I/O subsystem, in order to resemble an
+interactive CLIPS session. Other functions are present to retrieve
+object names, values and the so called \emph{pretty-print forms} for
+programmatic use.
+
+
+\section{Implementation Structure\label{pyclips-implstructure}}
+
+This section describes the guidelines and considerations that lead
+to this CLIPS interface implementation. For the developers which
+normally use CLIPS as a development environment or expert systems
+shell, the architecture of the \pyclips{} module will look a little
+bit different, and in some ways could also seem confusing.
+
+The main topics covered by these sections are the \emph{Implementation
+of Constructs as Classes}, the \emph{Implementation of CLIPS I/O
+Subsystem}, the \emph{Configuration and Debug Objects}, the
+\emph{Coexistence of Global and Environment-Aware Engines} and the
+\emph{Conventions used for Naming} which explains the rules that
+helped choose the current naming scheme for classes, functions and
+objects implemented in \pyclips{}.
+
+
+\subsection{Implementation of Constructs as Classes\label{pyclips-ov-casc}}
+
+CLIPS users know that this shell offers several constructs to populate
+the system memory. These constructs are not described here, since a
+detailed explaination of the CLIPS language can be found in the
+official CLIPS documentation. These constructs, many of which have
+their particular syntax, create ``objects'' (not necessarily in the
+sense of OOP\footnote{In fact, the word \emph{object} is used here
+to indicate an item that takes part in a program. For instance, one
+such object can be a \class{Rule}: it is not a proper OO object,
+but something that in imperative languages would act as a control
+structure.}, although some of these can be \class{Instance}s of
+\class{Class}es) in the subsystem memory.
+
+The choice of implementing most of these constructs as classes gives
+to \pyclips{} a more organic structure. Most of the construct classes
+share similarities which make the interface structure simpler and the
+access to CLIPS objects more systematic.
+
+Most constructs are implemented as \emph{factory functions} which
+return instances of Python classes. These Python instances (that
+shadow the corresponding CLIPS objects), on their turn, have methods
+and properties which operate directly on the objects they map in the
+CLIPS subsystem. Methods and properties provide both access and
+\emph{send messages} to these objects.
+
+An example of this follows:
+
+\begin{verbatim}
+>>> import clips
+>>> f0 = clips.Assert("(duck)")
+>>> print f0
+f-0
+>>> print f0.Exists()
+True
+>>> f0.Retract()
+>>> print f0.Exists()
+False
+\end{verbatim}
+
+In the above example, a fact (\code{(duck)}) is asserted and then
+retracted. The assertion is done by means of a module-level function
+(\function{Assert()}) and the fact is retracted using a method of the
+shadow object (\var{f0}). A verification on the CLIPS \code{fact} object,
+using the Python \class{Fact} instance\footnote{It should be clear
+that terminology differs semantically from Python system to the CLIPS
+system: while OOP, to which terms used in Python are coherent, uses
+the words \emph{method}, \emph{instance} and so on with a particular
+meaning (to which Python developers are familiar), CLIPS terminology
+often differs from OOP, sometimes only slightly but at other times more
+substantially. The reader should note that throughout this manual
+each term is used -- as far as possible -- with the meaning that it
+assumes in its specific environment. In this case, the word
+\emph{instance} represents the instance of a Python \keyword{class},
+and is not referred to an entity in CLIPS.} \var{f0}'s method
+\function{Exists()}, shows that after invoking the \function{Retract()}
+method of \var{f0} the \code{fact} object does no longer exists in the
+CLIPS subsystem, thus it has been actually retracted.
+
+As stated previously, this does not remove the Python object
+(a \class{Fact} instance) from the namespace pertinent to Python itself:
+as it can be seen from the code snip shown above, \code{f0} is still a
+functional instance, and can be queried about the existence of the
+corresponding object in CLIPS.
+
+Objects in the CLIPS operating space can be referenced by more than a
+Python object (or even not be referenced at all, if CLIPS creation does
+not correspond to a Python assignment), as demonstrated by the following
+code:
+
+\begin{verbatim}
+>>> clips.Reset()
+>>> f1 = clips.Assert("(duck)")
+>>> clips.Assert("(quack)")
+<Fact 'f-2': fact object at 0x00DE8420>
+>>> f1
+<Fact 'f-1': fact object at 0x00DE3020>
+>>> fl = clips.FactList()
+>>> f1b = fl[1]
+>>> f1b
+<Fact 'f-1': fact object at 0x00E08C40>
+\end{verbatim}
+
+Both \var{f1} and \var{f1b} refer to the same object in CLIPS namespace,
+but their address is different: in fact they are two different Python
+objects (equality test fails) but correspond to the same \code{fact} in
+CLIPS.
+
+\begin{seealso}
+\sclipsbpg{}
+\end{seealso}
+
+
+\subsection{Implementation of CLIPS I/O Subsystem\label{pyclips-ov-io}}
+
+The CLIPS shell interacts with the user answering to typed in commands
+with some informational output. An interactive CLIPS session will show
+this:
+
+\begin{verbatim}
+CLIPS> (reset)
+CLIPS> (watch activations)
+CLIPS> (defrule duck-rule "the Duck Rule"
+   (duck)
+=>
+   (assert (quack)))
+CLIPS> (assert (duck))
+==> Activation 0      duck-rule: f-1
+<Fact-1>
+CLIPS> (run)
+CLIPS> (facts)
+f-0     (initial-fact)
+f-1     (duck)
+f-2     (quack)
+For a total of 3 facts.
+\end{verbatim}
+
+Each time a \code{fact} is asserted, CLIPS outputs a string containing
+its index, and since we decided to show some debug output about
+activations, CLIPS produces a line as soon as \code{duck} is asserted,
+since \code{duck-rule} would be activated by this. Although in an
+interactive session all of the output would go to the terminal, CLIPS
+logically considers the ``streams'' for different output types as
+separated: in fact, debug output (the one generated by the \code{watch}
+command) goes to a special stream called \code{wtrace}. In this special
+case, for instance, the debug output can be captured by \pyclips{}
+through a special stream-like Python object, which provides a
+\function{Read()} function\footnote{Note that \function{Read()} is
+capitalized: this is because the stream-like objects do not really act
+as ``files'' as many objects which can be read in Python do. So it
+becomes impossible to use these \pyclips{} objects where a file-like
+object is to be used.}. Comparing the behaviour of two interactive
+sessions, the former in the CLIPS subsystem and the latter in Python,
+will help to understand the close relationship between CLIPS I/O and
+\pyclips{} stream objects. CLIPS will interact with the user as
+follows:
+
+\begin{verbatim}
+CLIPS> (defrule sayhello
+   (hello)
+=>
+   (printout t "hello, world!" crlf))
+CLIPS> (assert (hello))
+==> Activation 0      sayhello: f-1
+<Fact-1>
+CLIPS> (run)
+hello, world!
+\end{verbatim}
+
+And the Python counterpart follows:
+
+\begin{verbatim}
+>>> import clips
+>>> clips.DebugConfig.ActivationsWatched = True
+>>> r0 = clips.BuildRule("sayhello", "(hello)",
+                         '(printout stdout "hello, world!" crlf)')
+>>> print r0.PPForm()
+(defrule MAIN::sayhello
+   (hello)
+   =>
+   (printout stdout "hello, world!" crlf))
+
+>>> clips.Assert("(hello)")
+<Fact 'f-0': fact object at 0x00DE81C0>
+>>> t = clips.TraceStream.Read()
+>>> print t
+==> Activation 0      sayhello: f-0
+>>> clips.Run()
+>>> t = clips.StdoutStream.Read()
+>>> print t
+hello, world!
+\end{verbatim}
+
+The I/O access objects can be used both in interactive and unattended
+sessions. In this case, they can be useful to retrieve periodical
+information about CLIPS internal status, since most of the output
+provided can be easily interpreted in a programmatic way. Also, there
+is one more stream called \var{StdinStream} (which has a
+\function{Write()} method) that might be useful to send input to the
+CLIPS engine when some ``user interaction'' is required\footnote{This only
+happens actually when CLIPS invokes the \code{read} or \code{readline}
+functions.}.
+
+There is no way to create other instances of these streams: the
+high-level module hides the class used to build these objects. This
+is because the I/O streams have to be considered like ``physical
+devices'' whose use is reserved to the engine to report trace and
+debug information as well as user requested output.
+
+These I/O streams will be described later in the detail, since each
+one can be used to report about a specific task.
+
+\note{The streams have to be explicitly read: there is no way to
+receive a notification from CLIPS that some output has been written.
+In other words, the \pyclips{} engine is not \emph{event driven} in
+its interaction with Python.}
+
+
+\subsection{Configuration and Debug Objects\label{pyclips-ov-cado}}
+
+As well as I/O streams, there are two other objects directly provided
+by \pyclips{}. These objects provide access to the CLIPS engine global
+configuration. Many aspects of the CLIPS engine, that in the command
+line environment would be configured using particular commands, are
+accessible via the \var{EngineConfig} (global engine configuration)
+object and the \var{DebugConfig} (global debug and trace configuration)
+object. For example, we can take the code snip shown above:
+
+\begin{verbatim}
+>>> clips.DebugConfig.ActivationsWatched = True
+\end{verbatim}
+(...)
+\begin{verbatim}
+>>> t = clips.TraceStream.Read()
+>>> print t
+==> Activation 0      sayhello: f-0
+\end{verbatim}
+
+The \code{clips.DebugConfig.ActivationsWatched = True} line tells to the
+underlying subsystem that debug information about \emph{rule activations}
+has to be written to the proper stream (the stream dedicated to debug
+output in CLIPS is called \code{wtrace} and is accessible in \pyclips{}
+through the \var{TraceStream} object).
+
+As it has been said for the I/O streams, these objects cannot be instanced
+by the user: access to these objects affects global (or at least
+\emph{environmental}, we will see the difference later) configuration,
+so it would be of no meaning for the user to create more, possibly
+confusing, instances of such objects.
+
+
+\subsection{Coexistence of Global and Environment-Aware Engines\label{pyclips-ov-env}}
+
+As of version 6.20, CLIPS API offers the possibility to have several
+\emph{environments} in which to operate. We can consider environments as
+separate engines that only share the operating mode, in other words
+``the code''. \pyclips{} also implements environments by means of a special
+\class{Environment} class. This class implements all the features
+provided by the top level methods and classes. The \class{Environment}
+class reimplements all classes provided by \pyclips{}, but -- although
+their behaviour is quite similar -- methods of classes provided by
+\class{Environment} only affect the CLIPS environment represented by the
+\class{Environment} instance itself.
+
+There is normally no need to use environments. However, access to them
+is provided for CLIPS ``gurus'' who want to have more than one engine
+working at the same time. The end user of \pyclips{} will see no real
+difference between a call to a function and its environmental counterpart
+(defined as \emph{companion function} in the official CLIPS documentation),
+apart from being called as a member function of an \class{Environment}
+object.
+
+A simple example will be explanatory:
+
+\begin{verbatim}
+>>> clips.Clear()
+>>> clips.Reset()
+>>> e0 = clips.Environment()
+>>> e1 = clips.Environment()
+>>> e0.Assert("(duck)")
+<Fact 'f-0': fact object at 0x00E7D960>
+>>> e1.Assert("(quack)")
+<Fact 'f-0': fact object at 0x00E82220>
+>>> e0.PrintFacts()
+f-0     (duck)
+For a total of 1 fact.
+>>> e1.PrintFacts()
+f-0     (quack)
+For a total of 1 fact.
+\end{verbatim}
+
+
+\subsection{Using External Functions in CLIPS\label{pyclips-ov-extfuncs}}
+
+\pyclips{} gives the ability to users to call Python code from within
+the CLIPS subsystem. Virtually every function defined in Python can be
+called from CLIPS code using the special CLIPS function \code{python-call}.
+However, since CLIPS has different basic types than Python, in most cases
+it would be useful for modules that implement function to be called in
+the CLIPS engine to import the \pyclips{} module themselves, in order to
+be aware of the structures that CLIPS uses.
+
+Functions have to be registered in \pyclips{} in order to be available
+to the underlying engine, and the registration process can dynamically
+occur at any moment.
+
+A simple example follows:
+
+\begin{verbatim}
+>>> import clips
+>>> def py_square(x):
+        return x * x
+>>> clips.RegisterPythonFunction(py_square)
+>>> print clips.Eval("(python-call py_square 7)")
+49
+>>> print clips.Eval("(python-call py_square 0.7)")
+0.49
+\end{verbatim}
+
+A more detailed description of the features provided by \code{python-call}
+can be found in the appendices.
+
+
+\subsection{Conventions Used for Naming\label{pyclips-ov-names}}
+
+In \pyclips{}, the simple convention that is used is that all valuable
+content exposed has a name beginning with a capital letter. Names
+beginning with a single underscore have normally no meaning for the
+\pyclips{} user. Functions, class names and objects use mixed capitals
+(as in Java), and \emph{manifest constants} (names used in \emph{lieu}
+of explicit values to pass instructions to CLIPS functions or
+properties) are all capitalized, as is usual for the C language.
+
+CLIPS users will perhaps be confused because often the constructs in
+CLIPS are expressed by keywords containing a \code{def} prefix. The
+choice was made in \pyclips{} to drop this prefix in many cases: the use
+of this prefix has a strong logic in the CLIPS language, because in this
+way the developer knows that a \emph{construct} is used, that is, a
+\emph{definition} is made. The keyword used to instance this definition,
+both encapsulates the meaning of \code{def}inition itself, and also
+the type of construct that is being defined (e.g. \code{def}ine a
+\code{rule} is \code{defrule}), thus avoiding making constructs more
+difficult by means of two separate keywords. In \pyclips{}, since the
+definition happens at class declaration and the instantiation of classes
+shadows a construct definition when it has already been performed, it
+seemed unnecessary to keep the prefix: in fact, to follow the above
+example, it does not seem correct to refer to a rule within the CLIPS
+subsystem as a ``\class{Defrule}'' object, hence it is simply referred
+to as a \class{Rule}.
+
+
+\subsection{Pickling Errors\label{pyclips-ov-pickle}}
+
+Python objects cannot be pickled or unpickled. This is because, since
+pickling an object would save a reference to a CLIPS entity -- which is
+useless across different \pyclips{} sessions -- the unpickling process
+would feed the underlying engine in an unpredictable way, or at least
+would reference memory locations corresponding to previous CLIPS entities
+without the engine having them allocated.
+
+One better way to achieve a similar goal is to use the \function{Save()}
+or \function{BSave()} (and related \function{Load()} or \function{BLoad()})
+to save the engine\footnote{The mentioned functions are also \emph{members}
+of the \class{Environment} class, in which case the \class{Environment}
+status is saved.} status in its entirety.
+
+If a single entity is needed, its \emph{pretty-print form} can be used
+in most cases to recreate it using the \function{Build()} functions.
+
+
+\section{Other Usage Modes\label{pyclips-ov-otheruses}}
+
+It is also interesting that, by using some particular functions and the
+provided I/O subsystem, even ``pure'' CLIPS programs can be executed by
+\pyclips{}, and while the simple output from CLIPS can be read to obtain
+feedback, the possibility of inspecting the internal CLIPS subsystem
+state remains.
+
+The following example, taken from the CLIPS website\footnote{In fact
+the file has been slightly reformatted for typesetting reasons.},
+illustrates this: first we take a full CLIPS program, saved as
+\file{zebra.clp}, and reported below:
+
+\verbatiminput{zebra.clp}
+
+then we execute all commands (using the \function{BatchStar()} function)
+in the current \class{Environment} of an interactive \pyclips{} session:
+
+\begin{verbatim}
+>>> clips.BatchStar("zebra.clp")
+>>> clips.Reset()
+>>> clips.Run()
+>>> s = clips.StdoutStream.Read()
+>>> print s
+There are five houses, each of a different color, inhabited by men of
+different nationalities, with different pets, drinks, and cigarettes.
+
+The Englishman lives in the red house.  The Spaniard owns the dog.
+The ivory house is immediately to the left of the green house, where
+the coffee drinker lives.  The milk drinker lives in the middle house.
+The man who smokes Old Golds also keeps snails.  The Ukrainian drinks
+tea.  The Norwegian resides in the first house on the left.  The
+Chesterfields smoker lives next door to the fox owner.  The Lucky
+Strike smoker drinks orange juice.  The Japanese smokes Parliaments.
+The horse owner lives next to the Kools smoker, whose house is yellow.
+The Norwegian lives next to the blue house.
+
+Now, who drinks water?  And who owns the zebra?
+
+HOUSE | Nationality | Color  | Pet    | Drink        | Smokes
+--------------------------------------------------------------------
+  1   | norwegian   | yellow | fox    | water        | kools
+  2   | ukrainian   | blue   | horse  | tea          | chesterfields
+  3   | englishman  | red    | snails | milk         | old-golds
+  4   | spaniard    | ivory  | dog    | orange-juice | lucky-strikes
+  5   | japanese    | green  | zebra  | coffee       | parliaments
+
+>>> clips.PrintFacts()
+f-0     (initial-fact)
+f-26    (avh (a smokes) (v parliaments) (h 1))
+f-27    (avh (a smokes) (v parliaments) (h 2))
+f-28    (avh (a smokes) (v parliaments) (h 3))
+\end{verbatim}
+
+[... a long list of facts ...]
+
+\begin{verbatim}
+f-150   (avh (a color) (v red) (h 5))
+For a total of 126 facts.
+>>> li = clips.FactList()
+>>> for x in li:
+...	if str(x) == 'f-52':
+...		f52 = x
+>>> f52
+<Fact 'f-52': fact object at 0x00E6AA10>
+>>> print f52.PPForm()
+f-52    (avh (a drink) (v tea) (h 2))
+\end{verbatim}
+
+You can just copy the program above to a file, say \file{zebra.clp} as
+in the example, and follow the same steps to experiment with \pyclips{}
+objects and with the CLIPS subsystem.

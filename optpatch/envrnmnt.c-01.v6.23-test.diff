@@ -1,0 +1,105 @@
+--- ../clipssrc_orig/envrnmnt.c	Mon Jun 16 20:33:00 2003
++++ ../clipssrc/envrnmnt.c	Sun May 28 20:09:14 2006
+@@ -35,6 +35,30 @@
+ 
+ #define SIZE_ENVIRONMENT_HASH  131
+ 
++
++/* use Python memory allocator when compiling PyCLIPS */
++#ifdef PYCLIPS
++#include <Python.h>
++void *PyCLIPS_Malloc(size_t s);
++void PyCLIPS_Free(void *p);
++#if !BLOCK_MEMORY
++   #undef malloc
++   #define malloc PyCLIPS_Malloc
++   #undef free
++   #define free PyCLIPS_Free
++#endif /* BLOCK_MEMORY */
++#endif /* PYCLIPS */
++
++
++/* enable inhibition of fatal environment errors */
++#ifdef PYCLIPS
++int PyCLIPS_EnableFatal();
++#define FPRINTF if(PyCLIPS_EnableFatal()) fprintf
++#else
++#define FPRINTF fprintf
++#endif /* PYCLIPS */
++
++
+ /***************************************/
+ /* LOCAL INTERNAL FUNCTION DEFINITIONS */
+ /***************************************/
+@@ -75,7 +99,7 @@
+    
+    if (size <= 0)
+      {
+-      printf("\n[ENVRNMNT1] Environment data position %d allocated with size of 0 or less.\n",position);      
++      FPRINTF(stderr, "\n[ENVRNMNT1] Environment data position %d allocated with size of 0 or less.\n",position);
+       return(FALSE);
+      }
+      
+@@ -85,7 +109,7 @@
+    
+    if (position >= MAXIMUM_ENVIRONMENT_POSITIONS)
+      {
+-      printf("\n[ENVRNMNT2] Environment data position %d exceeds the maximum allowed.\n",position);      
++      FPRINTF(stderr, "\n[ENVRNMNT2] Environment data position %d exceeds the maximum allowed.\n",position);
+       return(FALSE);
+      }
+      
+@@ -95,7 +119,7 @@
+    
+    if (theEnvironment->theData[position] != NULL)
+      {
+-      printf("\n[ENVRNMNT3] Environment data position %d already allocated.\n",position);      
++      FPRINTF(stderr, "\n[ENVRNMNT3] Environment data position %d already allocated.\n",position);
+       return(FALSE);
+      }
+      
+@@ -170,7 +194,7 @@
+ 
+    if (EnvironmentHashTable == NULL)
+      {
+-      printf("\n[ENVRNMNT4] Unable to initialize environment hash table.\n");      
++      FPRINTF(stderr, "\n[ENVRNMNT4] Unable to initialize environment hash table.\n");
+       return;
+      }
+ 
+@@ -269,7 +293,7 @@
+   
+    if (theEnvironment == NULL)
+      {
+-      printf("\n[ENVRNMNT5] Unable to create new environment.\n");
++      FPRINTF(stderr, "\n[ENVRNMNT5] Unable to create new environment.\n");
+       return(NULL);
+      }
+ 
+@@ -277,7 +301,7 @@
+    
+    if (theData == NULL)
+      {
+-      printf("\n[ENVRNMNT6] Unable to create environment data.\n");
++      FPRINTF(stderr, "\n[ENVRNMNT6] Unable to create environment data.\n");
+       return(NULL);
+      }
+ 
+@@ -301,7 +325,7 @@
+    
+    if (theData == NULL)
+      {
+-      printf("\n[ENVRNMNT7] Unable to create environment data.\n");
++      FPRINTF(stderr, "\n[ENVRNMNT7] Unable to create environment data.\n");
+       return(NULL);
+      }
+ 
+@@ -431,7 +455,7 @@
+      
+    if ((theMemData->MemoryAmount != 0) || (theMemData->MemoryCalls != 0))
+      {
+-      printf("\n[ENVRNMNT8] Environment data not fully deallocated.\n"); 
++      FPRINTF(stderr, "\n[ENVRNMNT8] Environment data not fully deallocated.\n");
+       rv = FALSE;     
+      }
+      

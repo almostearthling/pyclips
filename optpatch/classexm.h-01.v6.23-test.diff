@@ -1,0 +1,20 @@
+--- ../clipssrc_orig/classexm.h	Wed Jan 19 18:57:18 2005
++++ ../clipssrc/classexm.h	Wed May 31 15:55:50 2006
+@@ -35,7 +35,7 @@
+ 
+ #if ENVIRONMENT_API_ONLY
+ #define BrowseClasses(theEnv,a,b) EnvBrowseClasses(theEnv,a,b)
+-#define DescribeClass(theEnv,a,b) EnvBrowseClasses(theEnv,a,b)
++#define DescribeClass(theEnv,a,b) EnvDescribeClass(theEnv,a,b)
+ #define SlotDirectAccessP(theEnv,a,b) EnvSlotDirectAccessP(theEnv,a,b)
+ #define SlotExistP(theEnv,a,b,c) EnvSlotExistP(theEnv,a,b,c)
+ #define SlotInitableP(theEnv,a,b) EnvSlotInitableP(theEnv,a,b)
+@@ -45,7 +45,7 @@
+ #define SuperclassP(theEnv,a,b) EnvSuperclassP(theEnv,a,b)
+ #else
+ #define BrowseClasses(a,b) EnvBrowseClasses(GetCurrentEnvironment(),a,b)
+-#define DescribeClass(a,b) EnvBrowseClasses(GetCurrentEnvironment(),a,b)
++#define DescribeClass(a,b) EnvDescribeClass(GetCurrentEnvironment(),a,b)
+ #define SlotDirectAccessP(a,b) EnvSlotDirectAccessP(GetCurrentEnvironment(),a,b)
+ #define SlotExistP(a,b,c) EnvSlotExistP(GetCurrentEnvironment(),a,b,c)
+ #define SlotInitableP(a,b) EnvSlotInitableP(GetCurrentEnvironment(),a,b)

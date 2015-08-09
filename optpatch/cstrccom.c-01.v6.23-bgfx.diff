@@ -1,0 +1,21 @@
+--- ../clipssrc_orig/cstrccom.c	Wed Feb  2 10:45:38 2005
++++ ../clipssrc/cstrccom.c	Sun Jan 22 15:47:58 2006
+@@ -29,6 +29,9 @@
+ /*                                                           */
+ /*            Correction for FalseSymbol/TrueSymbol. DR0859  */
+ /*                                                           */
++/*      6.24: Corrected an error when compiling as a C++     */
++/*            file.                                          */
++/*                                                           */
+ /*************************************************************/
+ 
+ #define _CSTRCCOM_SOURCE_
+@@ -834,7 +837,7 @@
+    /* Allocate the name buffer. */
+    /*===========================*/
+    
+-   buffer = genalloc(theEnv,bufferSize);
++   buffer = (char *) genalloc(theEnv,bufferSize);
+    
+    /*================================*/
+    /* Create the multifield value to */

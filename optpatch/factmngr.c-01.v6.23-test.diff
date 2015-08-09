@@ -1,0 +1,10 @@
+--- ../clipssrc_orig/factmngr.c	Wed Feb  2 10:49:18 2005
++++ ../clipssrc/factmngr.c	Sun May 28 20:09:14 2006
+@@ -1056,6 +1056,7 @@
+         {
+          if (slotPtr->multislot)
+            {
++            theFact->theProposition.theFields[i].type = MULTIFIELD;
+             StoreInMultifield(theEnv,&theResult,slotPtr->defaultList,TRUE);
+             theFact->theProposition.theFields[i].value = DOToMultifield(theEnv,&theResult);
+            }

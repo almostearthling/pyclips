@@ -1,0 +1,731 @@
+% $Id: appendix.tex 346 2008-02-25 00:39:00Z Franz $
+\appendix
+
+\chapter{Usage Notes\label{pyclips-unotes}}
+
+\section{Environments\label{pyclips-unotes-env}}
+
+As seen in the detailed documentation, \pyclips{} also provides access
+to the \emph{environment} features of CLIPS, through the
+\class{Environment} class. \class{Environment} objects provide almost
+all functions normally available at the top level of \pyclips{}, that is
+importing \code{clips} into a Python script. \class{Environment} object
+methods having the same name of functions found at the top level of
+\pyclips{}, have the same effect of the corresponding function -- but
+restricted to the logical environment represented by the object
+itself\footnote{In fact, the Python submodule that implements the
+\class{Environment} class is generated automatically: the process can be
+examined by looking at the code in \file{setup.py} and
+\file{clips/_clips_wrap.py}.}. Normally in a true CLIPS session users would
+not use environments, so the concept of environment may, in many cases,
+not be useful.
+
+There are also functions (namely: \function{CurrentEnvironment()} and
+\function{Environment.SetCurrent()}) that allow the user to switch
+environment and to use top level functions and classes in any of the
+created environments. This is useful in cases where environments are used,
+because due to the double nature of CLIPS API (see \clipsapg{} about
+\emph{companion functions} for standard API), objects defined in
+environments have slightly different types than corresponding top level
+objects -- since these types are \emph{environment-aware}. However
+environment aware classes define exactly the same methods as the top
+level counterparts, so their logical use is the same.
+
+\begin{notice}
+Please note that the \function{CurrentEnvironment()} function returns
+a fully functional \class{Environment} object. However the system
+prevents\footnote{Raising an appropriate exception.} invasive access via
+\emph{environment-aware} functions to current \emph{environment}: user
+code should \emph{always} use functions defined at module level to access
+current \emph{environment}. The \class{Environment} methods become safe
+as soon as another \class{Environment} has become current -- and in this
+case its methods and properties will raise an error.
+\end{notice}
+
+\class{Environment}s are a limited resource: this is because it is
+impossible in \pyclips{} to destroy a created \class{Environment}.
+In order to reuse \class{Environment}s it may be useful to keep a
+reference to each of them for the whole \pyclips{} session. If there
+is an attempt to create more \class{Environment}s than allowed, an
+exception is raised.
+
+
+
+\section{Multiple Ways\label{pyclips-unotes-multiw}}
+
+There is more than one way to use the \pyclips{} module, since it exposes
+almost all the API functions of CLIPS, seen in fact as a library, to the
+Python environment.
+
+The module \pyclips{} provides some functions, that is \function{Build()}
+and \function{Eval()}, that let the user directly issue commands in the
+CLIPS subsystem from a Python program. In fact, the use of \function{Build()}
+allows definition of constructs in CLIPS\footnote{Note that the
+\function{Build()} function does not return any value or object, so you
+will have to call \function{Find\emph{Construct}()} to find entities created
+using the \function{Build()} function.}, and \function{Eval()} lets the user
+evaluate values or call code directly in the subsystem. So for instance
+rules can be built in \pyclips{} using
+
+\begin{verbatim}
+>>> import clips
+>>> clips.Build("""
+(defrule duck-rule "the Duck Rule"
+   (duck)
+   =>
+   (assert (quack)))
+""")
+>>> clips.PrintRules()
+MAIN:
+duck-rule
+\end{verbatim}
+
+and evaluate a sum using
+
+\begin{verbatim}
+>>> n = clips.Eval("(+ 5 2)")
+>>> print n
+7
+\end{verbatim}
+
+Also, the user is allowed to call functions that do not return a value
+using \function{Eval()}\footnote{There is a discussion about functions
+that only have \emph{side effects} in CLIPS, such as \code{printout}, in
+\clipstut{}, that is, the CLIPS tutorial.}, as in the following example:
+
+\begin{verbatim}
+>>> clips.Eval('(printout t "Hello, World!" crlf)')
+>>> print clips.StdoutStream.Read()
+Hello, World!
+\end{verbatim}
+
+There is another function, namely \function{SendCommand()}, that sends
+an entire CLIPS command (it has to be a full, correct command, otherwise
+\pyclips{} will issue an exception): as \function{Build()} it does not
+return any value or object\footnote{Some information about the command
+result can be retrieved reading the appropriate output streams.}.
+However this can be particularly useful when the user needs to implement
+an interactive CLIPS shell within an application built on \pyclips{}.
+Unless the application is mostly CLIPS oriented (if for instance Python
+is used just as a ``glue'' script language) probably the use of this
+function has to be discouraged, in favour of the code readability that
+-- at least for Python programmers -- is provided by the Python oriented
+interface.
+
+Using \function{SendCommand()} it becomes possible to write:
+
+\begin{verbatim}
+>>> import clips
+>>> clips.SendCommand("""
+(defrule duck-rule "the Duck Rule"
+   (duck)
+   =>
+   (assert (quack)))
+""")
+>>> clips.SendCommand("(assert (duck))")
+>>> clips.Run()
+>>> clips.PrintFacts()
+f-0     (duck)
+f-1     (quack)
+For a total of 2 facts.
+>>> clips.PrintRules()
+MAIN:
+duck-rule
+\end{verbatim}
+
+The most important caveat about \function{SendCommand()} is that CLIPS
+accepts some kinds of input which normally have to be considered
+incorrect, and \pyclips{} does neither return an error value, nor raise
+an exception: for instance, it is possible to pass a symbol to CLIPS to
+the command line as in
+
+\begin{verbatim}
+CLIPS> thing
+thing
+\end{verbatim}
+
+and in this case CLIPS ``evaluates'' the symbol, printing it to the
+console as a result of the evaluation. \pyclips{} does not automatically
+capture evaluation output, and just accepts a symbol (or other commands
+that can be evaluated) as input without any production:
+
+\begin{verbatim}
+>>> import clips
+>>> clips.SendCommand("thing")
+\end{verbatim}
+
+but, turning on the verbosity flag:
+
+\begin{verbatim}
+>>> clips.SendCommand("thing", True)
+>>> print clips.StdoutStream.Read()
+thing
+\end{verbatim}
+
+Of course, \pyclips{} complains if something incorrect is passed to the
+\function{SendCommand()} function and raises an exception as previously
+stated. However the exception is accompanied by a rather non-explanatory
+text. The \var{ErrorStream} object should be queried in this case in order
+to obtain some more information about the error:
+
+\begin{verbatim}
+>>> clips.SendCommand("(assert (duck)")	# no right bracket
+
+Traceback (most recent call last):
+  File "<pyshell#5>", line 1, in -toplevel-
+    clips.SendCommand("(assert (duck)")	# no right bracket
+  File ".../_clips_wrap.py", line 2575, in SendCommand
+    _c.sendCommand(s)
+ClipsError: C09: unable to understand argument
+>>> print clips.ErrorStream.Read()
+
+[PRNTUTIL2] Syntax Error:  Check appropriate syntax for RHS patterns.
+\end{verbatim}
+
+Obviously \function{SendCommand()} can lead to serious errors if not
+used with some kind of interaction.
+
+The point of this paragraph is that, for entity definition (evaluation
+can only be performed using the \function{Eval()} or \function{Call()}
+functions), the \pyclips{} module provides a full set of specific
+\function{Build\emph{Entity}()} functions which also return appropriate
+objects corresponding to specific entities. So, the task of building a
+\emph{rule} in CLIPS (in fact, a \class{Rule} object in Python) could
+preferably be performed directly using the \function{BuldRule()}
+function, that is:
+
+\begin{verbatim}
+>>> clips.Clear()
+>>> clips.Reset()
+>>> r0 = clips.BuildRule("duck-rule", "(duck)", "(assert (quack))",
+                         "the Duck Rule")
+>>> print r0.PPForm()
+(defrule MAIN::duck-rule "the Duck Rule"
+   (duck)
+   =>
+   (assert (quack)))
+
+>>> clips.PrintRules()
+MAIN:
+duck-rule
+\end{verbatim}
+
+thus with the same effect as with the \function{Build()} function, but
+obtaining immediately a reference to the rule entity in CLIPS as a Python
+object. Similar examples could be provided for the \function{SendCommand()}
+function, using the appropriate constructs or commands that can be used
+to achieve the same goals.
+
+This allows the user to choose between at least two programming styles in
+\pyclips{}: the former, more CLIPS oriented, relies heavily on the use of
+the \function{Build()}, \function{Eval()} and \function{SendCommand()}
+functions, and is probably more readable to CLIPS developers. The latter
+is somewhat closer to Python programming style, based on the creation of
+objects of a certain nature by calling specific Python functions. The
+advice is to avoid mixing the two styles unless necessary, since it can
+make the code quite difficult to understand.
+
+
+
+\section{Python Functions in CLIPS\label{pyclips-unotes-pyfuncs}}
+
+In \pyclips{} it is possible to execute Python functions from within
+CLIPS embedded constructs and statements. This allows the extension of
+the underlying inference engine with imperative functionalities, as well
+as the possibility to retrieve information from the Python layer
+asynchronously with respect to Python execution. Of course this
+possibility enables some enhancements of the CLIPS environment, but
+-- as a drawback -- it also opens the way to errors and misunderstandings.
+
+Usage of Python external functions is fairly simple: the user should
+register functions that will be called from within the CLIPS subsystem
+in \pyclips{} using the \function{RegisterPythonFunction()} toplevel
+function. If no alternate name for the function is specified, then the
+Python name will be used\footnote{An example of function registration
+has been provided in the introduction.}. If necessary, Python function
+names can be deregistered using \function{UnregisterPythonFunction()} and
+\function{ClearPythonFunctions()} utilities. Once a function is registered
+it can be called from within the CLIPS engine using the following syntax:
+
+\begin{verbatim}
+    (python-call <funcname> [arg1 [arg2 [ ... [argN]]]])
+\end{verbatim}
+
+and will return a value (this allows its use in assignments) to the CLIPS
+calling statement. In the call, \code{<funcname>} is a \emph{symbol}
+(using a string will result in an error) and the number and type of
+arguments depends on the actual Python function. When arguments are of
+wrong type or number, the called function fails. Using the previously
+illustrated \function{py_square} example, we have:
+
+\begin{verbatim}
+>>> clips.RegisterPythonFunction(py_square)
+>>> clips.SetExternalTraceback(True)	# print traceback on error
+>>> print clips.Eval("(python-call py_square 7)")
+49
+>>> print clips.Eval('(python-call py_square "a")')
+Traceback (most recent call last):
+  File ".../_clips_wrap.py", line 2702, in <lambda>
+    f = lambda *args: _extcall_retval(func(*tuple(map(_cl2py, list(args)))))
+  File "<pyshell#85>", line 2, in py_square
+TypeError: can't multiply sequence to non-int
+FALSE
+>>> print clips.Eval("(python-call py_square 7 7)")
+Traceback (most recent call last):
+  File ".../_clips_wrap.py", line 2702, in <lambda>
+    f = lambda *args: _extcall_retval(func(*tuple(map(_cl2py, list(args)))))
+TypeError: py_square() takes exactly 1 argument (2 given)
+FALSE
+\end{verbatim}
+
+It is important to know, in order to avoid errors, that the Python
+interpreter that executes functions from within CLIPS is exactly the
+same that calls the \pyclips{} function used to invoke the engine: this
+means, for example, that a Python function called in CLIPS is subject
+to change the state of the Python interpreter itself. Moreover, due
+to the nature of CLIPS external function call interface, Python functions
+called in CLIPS will never raise exceptions\footnote{Exceptions can
+arise \emph{during} the Python function execution, and can be caught
+inside the function code. However, for debugging purposes, there is the
+possibility to force \pyclips{} print a standard traceback whenever an
+error occurs in a Python function called by CLIPS.} in the Python calling
+layer.
+
+Here are some other issues and features about the nature of the external
+function call interface provided by \pyclips{}:
+
+\emph{Functions should be CLIPS-aware:} when CLIPS calls a Python external
+function with arguments, these are converted to values that Python can
+understand using the previously described \emph{wrapper classes}. Thus,
+for instance, if the Python function is given an integer argument, then
+an argument of type \class{Integer} (not \class{int}) will be passed as
+actual parameter. This means that in most cases \pyclips{} has to be
+imported by modules that define external Python functions.
+
+\emph{Actual parameters cannot be modified:} there is no way to pass values
+back to CLIPS by modifying actual parameters. The possibility to use
+\class{Multifield} parameters as lists should not deceive the user, as
+every modification performed on \class{Multifield}s that Python receives
+as parameters will be lost after function completion. A way to handle this
+is to treat parameters as \emph{immutable} values.
+
+\emph{External functions should always return a value:} functions always
+return a value in CLIPS, even in case of an error. This can be clearly
+seen in the following chunk of CLIPS code:
+
+\begin{verbatim}
+CLIPS> (div 1 0)
+[PRNTUTIL7] Attempt to divide by zero in div function.
+1
+\end{verbatim}
+
+where, although an error message is printed to the console, the value
+\constant{1} is returned by the system. In the same way, CLIPS expects
+Python external functions to return a value. \pyclips{} solves this issue
+by converting a return value of \constant{None} (which is the real return
+value for Python functions that simply \code{return}) into the symbol
+\code{nil}, that has a meaning similar to the one of \constant{None} for
+Python. Also, functions that raise uncaught exceptions will in fact return
+a value to the underlying CLIPS engine: in this case the returned value
+is the symbol \code{FALSE}, and an error message is routed to the error
+stream -- thus, it can be retrieved using \function{ErrorStream.Read()}.
+The following example imitates the \code{div} CLIPS example above:
+
+\begin{verbatim}
+>>> import clips
+>>> exceptor = lambda : 1 / 0
+>>> clips.RegisterPythonFunction(exceptor, 'exceptor')
+>>> clips.SetExternalTraceback(True)	# print traceback on error
+>>> clips.Eval('(python-call exceptor)')
+Traceback (most recent call last):
+  File ".../_clips_wrap.py", line 2702, in <lambda>
+    f = lambda *args: _extcall_retval(func(*tuple(map(_cl2py, list(args)))))
+  File "<pyshell#79>", line 1, in <lambda>
+ZeroDivisionError: integer division or modulo by zero
+<Symbol 'FALSE'>
+\end{verbatim}
+
+\emph{Return values must be understood by CLIPS:} only values that can
+be converted to CLIPS base types can be returned to the inference engine.
+This includes all values that can be converted to \pyclips{} \emph{wrapper
+classes}. In fact it can be considered a good practice to cast return
+values to \pyclips{} \emph{wrapper classes} when the main purpose of a
+function is to be called from within CLIPS.
+
+\emph{Python functions act as generic functions:} due to the nature of
+Python, functions are generally polymorphic:
+
+\begin{verbatim}
+>>> def addf(a, b):
+        return a + b
+>>> print addf("egg", "spam")
+eggspam
+>>> print addf(2, 4)
+6
+\end{verbatim}
+
+The intrinsic polymorphism of Python functions is kept within the CLIPS
+subsystem:
+
+\begin{verbatim}
+>>> import clips
+>>> clips.RegisterPythonFunction(addf)
+>>> print clips.Eval('(python-call addf "egg" "spam")')
+eggspam
+>>> print clips.Eval('(python-call addf 2 4)')
+6
+\end{verbatim}
+
+Thus Python functions act in a way that is similar to \code{generic}s.
+
+
+
+\chapter{The \module{clips._clips} Submodule\label{pyclips-llclips}}
+
+It has been said throughout the whole document that there are two
+different ``natures'' of \pyclips{}, called the \emph{high level module}
+and the \emph{low level module}. The former has been described in detail
+here, and is supposed to be the main interface to CLIPS. However, since
+all communication between Python and the CLIPS subsystem is implemented
+in the \emph{low level} part, some users might find it useful to access
+this interface instead of the \emph{higher level} one. It is not the
+intention of this manual to provide documentation for the \emph{low
+level} \module{clips._clips} interface, but only to give some indications
+to users who already have experience of the CLIPS C interface.
+
+Submodule \module{clips._clips} provides low-level classes that have the
+same names as their counterparts in CLIPS, such as \class{fact},
+\class{deftemplate} and so on. Also, \module{clips._clips} defines an
+\class{environment} class to refer to \emph{environment} addresses.
+
+Almost all functions described in \clipsapg{} are ported to Python,
+except for missing features described below: the name is the same as in
+the reference guide, except for the first letter that is not
+capitalized\footnote{There can be some exceptions: the most
+important one is the assertion function, since Python already has an
+\keyword{assert} keyword. This function is called \function{assertFact}
+instead.}. CLIPS ``top level'' functions have been ported to
+\module{clips._clips} as well as \emph{companion functions} that accept
+an \class{environment} instance as the first argument\footnote{When
+trying to show the \emph{documentation string} of these functions, the
+first argument is not described because their code has been generated
+automatically.}, whose name begins with \code{env_} followed by the same
+name as the corresponding top level function.
+
+\emph{Low level} functions are documented by themselves through
+\emph{documentation strings}, that describe purpose, arguments and return
+values. For instance, let's show the documentation of a function:
+
+\begin{verbatim}
+>>> import clips
+>>> cl = clips._clips
+>>> print cl.listDeftemplates.__doc__
+listDeftemplates(logicalname [, module])
+list deftemplates to output identified by logicalname
+arguments:
+  logicalname (str) - the logical name of output
+  module (module) - the module to inspect, all modules if omitted
+\end{verbatim}
+
+Most low level function documentation strings, i.e. the ones given
+for functions that are not trivially identifiable with the CLIPS API
+counterparts\footnote{Some functions have a documentation string that
+actually refers to the CLIPS API itself, explicitly containing the words
+``\emph{equivalent of C API}'' and the C function name: \clipsapg{} is
+especially useful in this case.}, have this form and describe in detail
+arguments and return values. Users who want to benefit of these
+functions, can display \emph{documentation strings} as a reference.
+
+The underlying engine is the same, there is no separation of environment
+between the two interfaces. Operations performed at \emph{lower level}
+are obviously reflected in the \emph{higher level} layer, as in the
+following example:
+
+\begin{verbatim}
+>>> clips.Clear()
+>>> cl.facts("stdout")
+>>> s = clips.StdoutStream.Read()
+>>> print s
+None
+>>> print cl.assertString.__doc__
+assertString(expr) -> fact
+assert a fact into the system fact list
+returns: a pointer to the asserted fact
+arguments:
+  expr (str) - string containing a list of primitive datatypes
+>>> f = cl.assertString("(duck)")
+>>> clips.PrintFacts()
+f-0     (duck)
+For a total of 1 fact.
+\end{verbatim}
+
+so the two interfaces can be used interchangeably.
+
+
+
+\chapter{Error Codes\label{pyclips-errors}}
+
+It has been discussed above, that some of the \pyclips{} functions can
+raise a CLIPS specific exception, namely \exception{ClipsError}. Some
+of the exceptions of this type (in fact, the ones raised by the
+underlying CLIPS engine and caught at the lower level), come with an
+error code in the accompanying text. A brief description of exceptions
+that arise at low level follows:
+
+\begin{tableii}{l|l}{code}{Code}{Description}
+	\lineii{P01}{An object could not be created, due to memory
+            issues}
+	\lineii{C01}{The engine could not create a system object}
+	\lineii{C02}{The referred object could not be found in
+            subsystem}
+	\lineii{C03}{An attempt was made to modify an unmodifiable
+            object}
+	\lineii{C04}{A file could not be opened}
+	\lineii{C05}{The current environment could not be retrieved}
+	\lineii{C06}{The engine was unable to return the required value}
+	\lineii{C07}{Parse error in the passed in CLIPS file}
+	\lineii{C08}{Syntax or parse error in the passed in CLIPS
+            expression}
+	\lineii{C09}{Syntax or parse error in the passed in argument}
+	\lineii{C10}{Expression could not be evaluated, maybe because of
+            syntax errors}
+	\lineii{C11}{An object could not be removed from the CLIPS
+            subsystem}
+	\lineii{C12}{A fact could not be asserted, maybe because of
+            missing \code{deftemplate}}
+	\lineii{C13}{Iteration beyond last element in a list}
+	\lineii{C14}{A CLIPS function has been called unsuccessfully}
+	\lineii{C15}{Attempt to modify an already asserted fact was made}
+	\lineii{C16}{Cannot destroy environment while it is current}
+	\lineii{C90}{Other errors: specific description given}
+	\lineii{C97}{The feature is present when a higher version of
+            CLIPS is used}
+	\lineii{C98}{An attempt was made to use an unimplemented feature
+            (see below)}
+	\lineii{C99}{Generic CLIPS error, last operation could not be
+            performed}
+	\lineii{C00}{Generic CLIPS error, no specific cause could be
+            reported}
+        \lineii{S01}{Attempt to access a fact that is no longer valid
+            or has been deleted}
+        \lineii{S02}{Attempt to access an instance that is no longer
+            valid or has been deleted}
+        \lineii{S03}{Clear operation on an environment has failed}
+        \lineii{S04}{Attempt to access an environment that has been
+            deleted}
+        \lineii{S05}{Attempt to operate on alias of current environment}
+        \lineii{S06}{Attempt to create more environments than allowed}
+        \lineii{S00}{Generic internal system error}
+        \lineii{R01}{The logical buffer (I/O Stream) has been misused}
+	\lineii{R02}{The logical buffer with given name could not be
+            found}
+	\lineii{R03}{Could not write to a read-only logical buffer}
+\end{tableii}
+
+These codes can be extracted from the exception description and used to
+determine errors -- for instance, in an \code{if ... elif ...} control
+statement. Some of these errors are caught by the \pyclips{} high-level
+layer and interpreted in different ways (e.g. the \code{C13} error is
+used to generate lists or to return \constant{None} after last element
+in a list).
+
+There are also some CLIPS specific exceptions that can be thrown at the
+higher level: they are identified by a code beginning with the letter
+\code{M}. A list of these exceptions follows, along with their
+description:
+
+\begin{tableii}{l|l}{code}{Code}{Description}
+        \lineii{M01}{A constructor could not create an object}
+        \lineii{M02}{An object could not be found in the CLIPS subsystem}
+        \lineii{M03}{An attempt was made to \function{pickle} an object}
+        \lineii{M99}{Wrong Python version, module could not initialize}
+\end{tableii}
+
+Finally, there is a particular error that occurs in case of \emph{fatal}
+memory allocation failures, which is identified by a particular
+exception, namely \exception{ClipsMemoryError}. This excepion is raised
+with the following code and has the following meaning:
+
+\begin{tableii}{l|l}{code}{Code}{Description}
+        \lineii{X01}{The CLIPS subsystem could not allocate memory}
+\end{tableii}
+
+In this case the calling program \emph{must} exit, as the underlying
+engine has reached an unstable state. An exception different from the
+standard \exception{ClipsError} has been provided in order to allow
+quick and effective countermeasures\footnote{Please note that in some
+cases, and depending on how the operating system treats memory
+allocation failures, the Python interpreter too could loose stability
+in case of memory shortage.}.
+
+
+
+\chapter{Multithreading\label{pyclips-threading}}
+
+The CLIPS engine is a separate subsystem, as stated many times before.
+In other words, it maintains a state independently from what happens in
+the Python interpreter. This also means that, since CLIPS was never
+conceived to be used as a multithreaded library, multiple threads should
+not try to access the engine concurrently. The Python interpreter, due
+to its nature, does not actually allow concurrent calls to the low-level
+module, so it is safe to create concurrent threads that interact with
+\pyclips{}.
+
+However this has the side effect that, during a time consuming task
+(such as calling \function{Run()} on a complex set of rules and facts)
+the calling thread may block the other ones.
+
+A partial solution to this, to allow multiple threads to switch more
+reactively, is to call \function{Run()} with the \var{limit} parameter,
+which specifies the number of rules to be fired at once. Of course this
+allows subsequent calls to the CLIPS engine to modify its state, and
+consequently enables execution paths that could be different from the
+ones that a full CLIPS \code{(run)} would normally cause. Obviously
+this only applies to the \function{Run()} function.
+
+The consideration also implies that multithreaded Python applications
+should take care of examining the engine state before interacting with
+it, especially when splitting \function{Run()} (which normally modifies
+the state) in multiple calls.
+
+
+
+\chapter{Missing Features\label{pyclips-missing}}
+
+Most of the CLIPS API is implemented in \pyclips{}. The \emph{lower
+level} interface (which directly maps CLIPS exposed functions as
+described in \clipsapg{}) can be accessed using the
+\module{clips._clips} submodule. Almost all the functions defined here
+have a counterpart in the CLIPS API, and a combined use of documentation
+strings and \clipsapg{} itself can allow you to directly manipulate the
+CLIPS subsystem as you would have done by embedding it in a C program.
+However, there are some functions that appear in \code{dir(clips._clips)}
+but, when called, issue an error:
+
+\begin{verbatim}
+>>> clips._clips.addClearFunction()
+Traceback (most recent call last):
+  File "<pyshell#46>", line 1, in ?
+    clips._clips.addClearFunction()
+ClipsError: C98: unimplemented feature/function
+\end{verbatim}
+
+and in fact, even their documentation string reports
+
+\begin{verbatim}
+>>> print clips._clips.addClearFunction.__doc__
+unimplemented feature/function
+\end{verbatim}
+
+even if the name of the function is defined and is a \emph{callable}.
+
+A list of such functions follows:
+
+\begin{tableii}{l|l}{code}{Function}{Type}
+	\lineii{addClearFunction}{execution hook}
+	\lineii{addPeriodicFunction}{execution hook}
+	\lineii{addResetFunction}{execution hook}
+	\lineii{removeClearFunction}{execution hook}
+	\lineii{removePeriodicFunction}{execution hook}
+	\lineii{removeResetFunction}{execution hook}
+	\lineii{addRunFunction}{execution hook}
+	\lineii{removeRunFunction}{execution hook}
+	\lineii{decrementFactCount}{reference count handler}
+	\lineii{incrementFactCount}{reference count handler}
+	\lineii{decrementInstanceCount}{reference count handler}
+	\lineii{incrementInstanceCount}{reference count handler}
+	\lineii{setOutOfMemoryFunction}{memory handler hook}
+	\lineii{addEnvironmentCleanupFunction}{execution hook}
+	\lineii{allocateEnvironmentData}{memory handler}
+	\lineii{deallocateEnvironmentData}{memory handler}
+	\lineii{destroyEnvironment}{environment destructor}
+	\lineii{getEnvironmentData}{memory handler}
+\end{tableii}
+
+The description of these functions is outside the scope of this guide,
+and can be found in \clipsapg{} of CLIPS. It is not likely that these
+functions will be implemented even in future versions of \pyclips{} since
+Python programmers are usually not interested in dealing with low level
+memory handling (which is the primary use of the memory oriented
+functions), and tasks like reference count handling are performed
+directly by Python itself (for Python objects which shadow CLIPS
+entities) and by the low level \pyclips{} submodule. Also, the functions
+referred to above as \emph{execution hooks} often have to deal with CLIPS
+internal structures at a very low level, so they would be of no use in a
+Python program.
+
+Other API functions, which are used internally by \pyclips{} (for
+instance the \function{InitializeEnvironment()} C function), are not
+implemented in the module.
+
+\begin{notice}
+Some of the features (either in current and possibly in further versions
+of \pyclips{}) may depend on the version of CLIPS that is used to compile
+the module. Using the most recent stable version of CLIPS is recommended
+in order to enable all \pyclips{} features. Features that are excluded
+from the module because of this reason will issue an exception, in which
+the exception text reports the following: \code{"C97: higher engine
+version required"}. Moreover, the CLIPS engine version may affect the
+behaviour of some functions. Please consider reading the documentation
+related to the used CLIPS version when a function does not behave as
+expected.
+\end{notice}
+
+
+\chapter{Installing \pyclips{}\label{pyclips-setup}}
+
+\section{Installation\label{pyclips-setup-installation}}
+
+To install \pyclips{} you should also download the full CLIPS source
+distribution. You will find a file called \file{CLIPSsrc.zip} at the
+CLIPS download location: you should choose to download this instead of
+the \UNIX{} compressed source, since the setup program itself performs
+the task of extracting the files to an appropriate directory with the
+correct line endings. The ZIP file format has been chosen in order to
+avoid using different extraction methods depending on the host operating
+system.
+
+\pyclips{} uses \module{distutils} or \module{setuptools} for its
+installation. So in all supported systems the module can be easily
+set up once the whole source has been extracted to a directory and
+the CLIPS source code has been put in the same place, by means of the
+following command:
+
+\begin{verbatim}
+# python setup.py install
+\end{verbatim}
+
+In fact recent versions of \pyclips{} will attempt to download the
+latest supported CLIPS source directly from the \pyclips{} web site
+if no CLIPS source package is found. Otherwise no attempt to connect
+to the Internet will be made. The \file{README} file provides more
+up-to-date and detailed information on the setup process.
+
+On \UNIX{}, if you have a system-wide Python distribution, your
+privileges for installation should be the same as the Python owner.
+
+The CLIPS library itself is compiled for a specific platform, since
+\file{setup.py} modifies the \file{setup.h} file in the CLIPS
+distribution. 
+
+\pyclips{} is known to build and pass the tests on \emph{Linux (x86 and
+x86_64)}\footnote{The x86_64 platforms requires some optional patches
+to be applied.}, \emph{Win32} (many flavours of it have been tested),
+\emph{Sun Solaris} with 32-bit gcc, \emph{FreeBSD}, \emph{Mac OS X} with
+\emph{Fink} and, using a customized build process, has been ported to the
+\emph{Sharp Zaurus (SA-1110)} platform.
+
+
+\section{Requirements\label{pyclips-setup-requirements}}
+
+\pyclips{} requires Python 2.4 or above to function: it uses decorators
+to check and enforce types where needed, and in some places it also uses
+modern aspects of the Python API.
+
+At least version 6.23 of CLIPS is required: it allows the definition and
+use of \emph{environments}, and the function and macro definitions are
+more conformant to the ones described in \clipsapg{}. Of course features
+present in CLIPS 6.24 are not available when using the previous CLIPS
+version, so if there is no particular reason to use it, please compile
+PyCLIPS with CLIPS 6.24, which also fixes some bugs.
+

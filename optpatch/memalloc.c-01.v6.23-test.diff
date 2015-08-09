@@ -1,0 +1,33 @@
+--- ../clipssrc_orig/memalloc.c	Wed Feb  2 10:53:30 2005
++++ ../clipssrc/memalloc.c	Sun May 28 20:09:14 2006
+@@ -46,6 +46,21 @@
+ 
+ #define STRICT_ALIGN_SIZE sizeof(double)
+ 
++
++/* use Python memory allocator when compiling PyCLIPS */
++#ifdef PYCLIPS
++#include <Python.h>
++void *PyCLIPS_Malloc(size_t s);
++void PyCLIPS_Free(void *p);
++#if !BLOCK_MEMORY
++   #undef malloc
++   #define malloc PyCLIPS_Malloc
++   #undef free
++   #define free PyCLIPS_Free
++#endif /* BLOCK_MEMORY */
++#endif /* PYCLIPS */
++
++
+ #define SpecialMalloc(sz) malloc((STD_SIZE) sz)
+ #define SpecialFree(ptr) free(ptr)
+ 
+@@ -448,7 +463,7 @@
+            { YieldTime(theEnv); }
+         }
+       MemoryData(theEnv)->MemoryTable[i] = NULL;
+-      if (((amount > maximum) && (maximum > 0)) || EvaluationData(theEnv)->HaltExecution)
++      if ((amount > maximum) && (maximum > 0))
+         {
+          if (printMessage == TRUE)
+            { EnvPrintRouter(theEnv,WDIALOG,"*** MEMORY  DEALLOCATED ***\n"); }

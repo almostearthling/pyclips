@@ -1,0 +1,702 @@
+% $Id: contents.tex 334 2008-01-12 04:10:30Z Franz $
+\chapter{Module Contents\label{pyclips-modulecontents}}
+
+This chapter gives a detailed description of top-level functions and
+constants in the \pyclips{} module. It's not intended to be a CLIPS
+reference: the official CLIPS Reference Guide still remains the main
+source of documentation for this. This Guide will often be referred to
+for information about the engine itself, and the user is expected to
+know the CLIPS language and structure sufficiently with respect to his
+goals.
+
+Although the \pyclips{} user is not supposed to know CLIPS API, it is
+advisable to have its reference at least at hand to sometimes understand
+\emph{how} \pyclips{} interacts with CLIPS itself. Besides the programmatic
+approach offered by \pyclips{} is vastly different to the C API -- with
+the occasional exception of the intrinsic logic.
+
+We will first describe the top level functions.
+
+\section{Top Level Functions and Constants\label{pyclips-toplevel}}
+
+\subsection{Constants\label{pyclips-tl-constants}}
+
+Several constants are provided in order to configure CLIPS environment
+or to instruct some functions to behave in particular ways.
+
+
+\subsubsection{Scope Save Constants}
+
+Constants to decide what to save in CLIPS dump files (see the
+\function{SaveInstances()}, \function{BSaveInstances()} and
+\function{SaveFacts()} functions).
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{LOCAL_SAVE}{save objects having templates defined
+            in current \class{Module}}
+	\lineii{VISIBLE_SAVE}{save all objects visible to current
+            \class{Module}}
+\end{tableii}
+
+
+\subsubsection{Salience Evaluation Constants}
+
+Constants to tell the underlying engine when salience has to be
+evaluated (see the \var{EngineConfig.SalienceEvaluation} property).
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{WHEN_DEFINED}{evaluate salience on rule definition
+            (the default)}
+	\lineii{WHEN_ACTIVATED}{evaluate salience on rule activation
+            (\emph{dynamic salience})}
+	\lineii{EVERY_CYCLE}{evaluate salience on every execution
+            cycle (\emph{dynamic salience})}
+\end{tableii}
+
+
+\subsubsection{Conflict Resolution Strategy Constants}
+
+Constants to specify the way the underlying engine should resolve
+conflicts among rules having the same salience (see the
+\var{EngineConfig.Strategy} property).
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{DEPTH_STRATEGY}{newly activated rule comes first}
+	\lineii{BREADTH_STRATEGY}{newly activated rule comes last}
+	\lineii{LEX_STRATEGY}{strategy based on \emph{time tags}
+            applied to facts}
+	\lineii{MEA_STRATEGY}{strategy based on \emph{time tags}
+            applied to facts}
+	\lineii{COMPLEXITY_STRATEGY}{newly activated rule comes before
+            rules of lower \emph{specificity}}
+	\lineii{SIMPLICITY_STRATEGY}{newly activated rule comes before
+            rules of higher \emph{specificity}}
+	\lineii{RANDOM_STRATEGY}{assign place in agenda randomly}
+\end{tableii}
+
+In the table above, the term \emph{specificity} refers to the number
+of comparisons in the LHS of a rule.
+
+
+\subsubsection{Class Definition Default Mode Constants}
+
+Constants to specify default mode used for classes definition. Please
+refer to \clipsbpg{} for details about the usage of the two modes, as
+the meaning is quite complex and outside the scope of this manual
+(see the \var{EngineConfig.ClassDefaultsMode} property).
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{CONVENIENCE_MODE}{set the default class mode to
+            \keyword{convenience}}
+	\lineii{CONSERVATION_MODE}{set the default class mode to
+            \keyword{conservation}}
+\end{tableii}
+
+
+\subsubsection{Message Handler Type Constants}
+
+Constants to define the execution time, the purpose and the behaviour of
+\emph{message handlers}: see function \function{BuildMessageHandler()}
+and the following members of the \class{Class} class:
+\function{AddMessageHandler()} and \function{FindMessageHandler()}.
+The following table summarizes the analogous one found in \clipsbpg{}.
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{AROUND}{only to set up an environment for the message}
+	\lineii{AFTER}{to perform auxiliary work after the primary message}
+	\lineii{BEFORE}{to perform auxiliary work before the primary message}
+	\lineii{PRIMARY}{to perform most of the work for the message}
+\end{tableii}
+
+
+\subsubsection{Template Slot Default Type Constants}
+
+It's possible to inspect whether or not a \class{Template} slot has been
+defined to have a default value, and in case it is, if its default value
+is \emph{static} (that is, constant) or \emph{dynamically generated} (for
+instance, using a function like \code{gensym}). See the documentation of
+\class{Template} for more details.
+
+\begin{tableii}{l|l}{constant}{Constant}{Description}
+	\lineii{NO_DEFAULT}{the slot has no default value}
+	\lineii{STATIC_DEFAULT}{the default value is a constant}
+	\lineii{DYNAMIC_DEFAULT}{the default value is dynamically generated}
+\end{tableii}
+
+Notice that \constant{NO_DEFAULT} evaluates to \constant{False}, so it's
+legal to use the \function{Template.Slot.HasDefault()} function just to
+test the presence of a default value. Please also note that
+\constant{NO_DEFAULT} is only returned when the default value for a slot
+is set to \code{?NONE} as stated in the \clipsapg{}.
+
+
+\subsection{Functions\label{pyclips-tl-functions}}
+
+\begin{funcdesc}{AgendaChanged}{}
+test whether or not \code{Agenda} has changed since last call.
+\end{funcdesc}
+
+\begin{funcdesc}{Assert}{o}
+Assert a \class{Fact} (already created or from a string). This perhaps
+needs some explanation: CLIPS allows the creation of \code{fact}s based
+on \class{Template}s, and in \pyclips{} this is done by instancing a
+\code{Fact} with a \class{Template} argument. The resulting \class{Fact}
+slots can then be modified and the object can be used to make an
+assertion, either by using the \class{Fact} \function{Assert()}
+function or this version od \function{Assert()}.
+\end{funcdesc}
+
+\begin{funcdesc}{BLoad}{filename}
+Load the constructs from a binary file named \var{filename}. Binary
+files are not human-readable and contain all the construct information.
+\end{funcdesc}
+
+\begin{funcdesc}{BLoadInstances}{filename}
+Load \class{Instance}s from binary file named \var{filename}. Binary
+files are not human-readable and contain all the construct information.
+\end{funcdesc}
+
+\begin{funcdesc}{BSave}{filename}
+Save constructs to a binary file named \var{filename}.
+\end{funcdesc}
+
+\begin{funcdesc}{BSaveInstances}{filename \optional{, mode=\constant{LOCAL_SAVE}}}
+Save \class{Instance}s to binary file named \var{filename}. The
+\var{mode} parameter can be one of \constant{LOCAL_SAVE} (for all
+\class{Instance}s whose \class{Definstance}s are defined in current
+\class{Module}) or \constant{VISIBLE_SAVE} (for all \class{Instance}s
+visible to current \class{Module}).
+\end{funcdesc}
+
+\begin{funcdesc}{BatchStar}{filename}
+Execute commands stored in text file named as specified in \var{filename}.
+\end{funcdesc}
+
+\begin{funcdesc}{BrowseClasses}{name}
+Print the list of \class{Class}es that inherit from specified one.
+\end{funcdesc}
+
+\begin{funcdesc}{Build}{construct}
+Build construct given in argument as a string. The string must enclose
+a full construct in the CLIPS language.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildClass}{name, text \optional{, comment}}
+Build a \class{Class} with specified name and body. \var{comment} is
+the optional comment to give to the object. This function is the only
+one that can be used to create \class{Class}es with multiple
+inheritance.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildDeffacts}{name, text \optional{, comment}}
+Build a \class{Deffacts} object with specified name and body.
+\var{comment} is the optional comment to give to the object.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildDefinstances}{name, text \optional{, comment}}
+Build a \class{Definstances} having specified name and body.
+\var{comment} is the optional comment to give to the object.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildFunction}{name, args, text \optional{, comment}}
+Build a \class{Function} with specified name, arguments and body.
+\var{comment} is the optional comment to give to the object. \var{args}
+can be either a blank-separated string containing argument names, or
+a sequence of strings corresponding to argument names. Such argument
+names should be coherent to the ones used in the function body (that is,
+\var{text}). The argument list, if expressed as a string, should
+\emph{not} be surrounded by brackets. \var{None} can also be used as
+the argument list if the function has no arguments.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildGeneric}{name, text \optional{, comment}}
+Build a \class{Generic} with specified name and body. \var{comment} is
+the optional comment to give to the object.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildGlobal}{name, \optional{, value}}
+Build a \class{Global} variable with specified \var{name} and \var{value}.
+The \var{value} parameter can be of any of the types supported by CLIPS:
+it can be expressed as a Python value (with type defined in Python: the
+module will try to pass to CLIPS a value of an according type), but for
+types that normally do not exist in Python (such as \class{Symbol}s) an
+explicit conversion is necessary. If the \var{value} is omitted, then
+the module assigns \var{Nil} to the variable.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildInstance}{name, defclass \optional{, overrides}}
+Build an \class{Instance} of given \class{Class} overriding specified
+\code{slots}. If no \code{slot} is specified to be overridden, then the
+\class{Instance} will assume default values.
+\end{funcdesc}
+
+\begin{methoddesc}{BuildMessageHandler}{name, class, args, text \optional{, type, comment}}
+Add a new \emph{message handler} to the supplied class, with specified
+name, body (the \var{text} argument) and argument list: this can be
+specified either as a sequence of variable names or as a single string
+of whitespace separated variable names. Variable names (expressed as
+strings) can also be \emph{wildcard parameters}, as specified in the
+\clipsbpg{}. The \var{type} parameter should be one of \var{AROUND},
+\var{AFTER}, \var{BEFORE}, \var{PRIMARY} defined at the module level:
+if omitted it will be considered as \var{PRIMARY}. The body must be
+enclosed in brackets, as it is in CLIPS syntax. The function returns
+the \emph{index} of the \emph{message handler} within the specified
+\class{Class}.
+\end{methoddesc}
+
+\begin{funcdesc}{BuildModule}{name \optional{, text, comment}}
+Build a \class{Module} with specified name and body. \var{comment} is
+the optional comment to give to the object. The current \class{Module}
+is set to the new one.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildRule}{name, lhs, rhs \optional{, comment}}
+Build a \class{Rule} object with specified name and body. \var{comment}
+is the optional comment to give to the object. The \var{lhs} and
+\var{rhs} parameters correspond to the \emph{left-hand side} and
+\emph{right-hand side} of a \class{Rule}.
+\end{funcdesc}
+
+\begin{funcdesc}{BuildTemplate}{name, text \optional{, comment}}
+Build a \class{Template} object with specified name and body.
+\var{comment} is the optional comment to give to the object.
+\end{funcdesc}
+
+\begin{funcdesc}{Call}{func, args}
+Call a CLIPS internal \class{Function} with the given argument string.
+The \var{args} parameter, in its easiest form, can be a list of arguments
+separated by blank characters using CLIPS syntax. There are other forms
+that can be used, depending on how many arguments the called function
+requires: if it accepts a single argument, the caller can just specify
+the argument\footnote{It must be of a type compatible with CLIPS. If a
+string is supplied, however, it will be considered as a list of arguments
+separated by whitespace: in order to explicitly pass a string it has
+either to be converted or to be specified surrounded by double quotes.}
+possibly cast using one of the \emph{wrapper classes} described below. When
+the function accepts multiple arguments it is possible to specify them
+as a sequence of values (either a list or a tuple) of basic\footnote{Complex
+values, as \emph{multifield}, are not supported: CLIPS does not allow
+external calls with non-constant arguments and there is no possibility
+to build a \emph{multifield} in place without an explicit function call.}
+values. It is always preferable to convert these values using the
+\emph{wrapper classes} in order to avoid ambiguity, especially in case of
+string arguments.
+\end{funcdesc}
+
+\begin{funcdesc}{ClassList}{}
+Return the list of \class{Class} names.
+\end{funcdesc}
+
+\begin{funcdesc}{Clear}{}
+Clear current \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{ClearPythonFunctions}{}
+Unregister all user defined Python functions from \pyclips{}.
+\end{funcdesc}
+
+\begin{funcdesc}{ClearFocusStack}{}
+Clear focus stack.
+\end{funcdesc}
+
+\begin{funcdesc}{CurrentEnvironment}{}
+Return an \class{Environment} object representing current CLIPS
+\emph{environment}. This is useful for switching between \emph{environment}s
+in a \pyclips{} session. Please note that almost all \emph{environment}
+operations are disallowed on the returned object until another
+\class{Environment} is selected as current: all operations on current
+\class{Environment} should be performed using the \emph{top level}
+module functions.
+\end{funcdesc}
+
+\begin{funcdesc}{CurrentModule}{}
+Return current module as a \class{Module} object.
+\end{funcdesc}
+
+\begin{funcdesc}{DeffactsList}{}
+Return a list of \class{Deffacts} names in current \class{Module}.
+\end{funcdesc}
+
+\begin{funcdesc}{DefinstancesList}{}
+Retrieve list of all \class{Definstances} names.
+\end{funcdesc}
+
+\begin{funcdesc}{Eval}{expr}
+Evaluate expression passed as argument. Expressions that only have
+\emph{side effects} (e.g. \code{printout} expressions) return
+\constant{None}.
+\end{funcdesc}
+
+\begin{funcdesc}{ExternalTracebackEnabled}{}
+Return \constant{True} if functions called from within CLIPS using the
+engine function \code{python-call} will print a standard traceback to
+\var{sys.stderr} on exceptions, \constant{False} otherwise. This function
+is retained for backwards compatibility only: please use the
+\var{ExternalTraceback} flag of the \var{DebugConfig} object to enable or
+disable this feature instead.
+\end{funcdesc}
+
+\begin{funcdesc}{FactList}{}
+Return list of \class{Fact}s in current \class{Module}.
+\end{funcdesc}
+
+\begin{funcdesc}{FactListChanged}{}
+Test whether \class{Fact} list is changed since last call.
+\end{funcdesc}
+
+\begin{funcdesc}{FindClass}{name}
+Find a \class{Class} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindDeffacts}{name}
+Find a \class{Deffacts} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindDefinstances}{name}
+Find a \class{Definstances} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindFunction}{name}
+Find a \class{Function} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindGeneric}{name}
+Find a \class{Generic} function by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindGlobal}{name}
+Find a \class{Global} variable by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindInstance}{name}
+Find an \class{Instance} in all \class{Module}s (including imported).
+\end{funcdesc}
+
+\begin{funcdesc}{FindInstanceLocal}{name}
+Find an \class{Instance} in non imported \class{Module}s.
+\end{funcdesc}
+
+\begin{funcdesc}{FindModule}{name}
+Find a \class{Module} in list by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindRule}{name}
+Find a \class{Rule} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FindTemplate}{name}
+Find a \class{Template} by name.
+\end{funcdesc}
+
+\begin{funcdesc}{FocusStack}{}
+Get list of \class{Module} names in focus stack.
+\end{funcdesc}
+
+\begin{funcdesc}{FunctionList}{}
+Return the list of \class{Function} names.
+\end{funcdesc}
+
+\begin{funcdesc}{GenericList}{}
+Return the list of \class{Generic} names.
+\end{funcdesc}
+
+\begin{funcdesc}{GlobalList}{}
+Return the list of \class{Global} variable names.
+\end{funcdesc}
+
+\begin{funcdesc}{GlobalsChanged}{}
+Test whether or not \class{Global} variables have changed since last
+call.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialActivation}{}
+Return first \class{\class{Activation}} object in current CLIPS
+\class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialClass}{}
+Return first \class{Class} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialDeffacts}{}
+Return first \class{Deffacts} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialDefinstances}{}
+Return first \class{Definstances} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialFact}{}
+Return first \class{Fact} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialFunction}{}
+Return first \class{Function} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialGeneric}{}
+Return first \class{Generic} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialGlobal}{}
+Return first \class{Global} variable in current CLIPS
+\class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialInstance}{}
+Return first \class{Instance} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialModule}{}
+Return first \class{Module} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialRule}{}
+Return first \class{Rule} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InitialTemplate}{}
+Return first \class{Template} in current CLIPS \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{InstancesChanged}{}
+Test if \class{Instance}s have changed since last call.
+\end{funcdesc}
+
+\begin{funcdesc}{Load}{filename}
+Load constructs from the specified file named \var{filename}.
+\end{funcdesc}
+
+\begin{funcdesc}{LoadFacts}{filename}
+Load \class{Fact}s from the specified file named \var{filename}.
+\end{funcdesc}
+
+\begin{funcdesc}{LoadFactsFromString}{s}
+Load \class{Fact}s from the specified string.
+\end{funcdesc}
+
+\begin{funcdesc}{LoadInstances}{filename}
+Load \class{Instance}s from file named \var{filename}.
+\end{funcdesc}
+
+\begin{funcdesc}{LoadInstancesFromString}{s}
+Load \class{Instance}s from the specified string.
+\end{funcdesc}
+
+\begin{funcdesc}{MessageHandlerList}{}
+Return list of \class{MessageHandler} constructs.
+\end{funcdesc}
+
+\begin{funcdesc}{MethodList}{}
+Return the list of all methods.
+\end{funcdesc}
+
+\begin{funcdesc}{ModuleList}{}
+Return the list of \class{Module} names.
+\end{funcdesc}
+
+\begin{funcdesc}{PopFocus}{}
+Pop focus.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintAgenda}{}
+Print \class{Rule}s in \code{Agenda} to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintBreakpoints}{}
+Print a list of all breakpoints to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintClasses}{}
+Print a list of all \class{Class}es to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintDeffacts}{}
+Print a list of all \class{Deffacts} to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintDefinstances}{}
+Print a list of all \class{Definstances} to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintFacts}{}
+Print \class{Fact}s to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintFocusStack}{}
+Print focus stack to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintFunctions}{}
+Print a list of all \class{Function}s to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintGenerics}{}
+Print list of \class{Generic} functions to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintGlobals}{}
+print a list of \class{Global} variables to standard output
+\end{funcdesc}
+
+\begin{funcdesc}{PrintInstances}{\optional{class}}
+Print a list of \class{Instance}s to standard output. If the \var{class}
+argument is omitted, all \class{Instance}s in the subsystem will be
+shown. The \var{class} parameter can be a \class{Class} object or a
+string containing a \class{Class} name.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintMessageHandlers}{}
+Print a list of all \class{MessageHandler}s.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintModules}{}
+Print a list of \class{Module}s to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintRules}{}
+Print a list of \class{Rule}s to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintSubclassInstances}{\optional{class}}
+Print subclass \class{Instance}s to standard output for the
+\class{Class} specified. If the \var{class} argument is omitted, all
+instances in the subsystem will be shown. The \var{class} parameter can
+be a string containing a \class{Class} name or a \class{Class} object.
+\end{funcdesc}
+
+\begin{funcdesc}{PrintTemplates}{}
+Print \class{Template} names to standard output.
+\end{funcdesc}
+
+\begin{funcdesc}{RefreshAgenda}{}
+Refresh \code{Agenda} \class{Rule}s for current \class{Module}.
+\end{funcdesc}
+
+\begin{funcdesc}{RegisterPythonFunction}{callable \optional{, name}}
+Register the function \function{callable} for use within CLIPS via the
+engine function \code{python-call}. If the parameter \var{name} of type
+\class{str} is not given, then the \var{__name__} attribute of the
+first argument will be used. \var{name} is the name that will be used
+in CLIPS to refer to the function. See appendix for a more detailed
+explanation.
+\end{funcdesc}
+
+\begin{funcdesc}{ReorderAgenda}{}
+Reorder \code{Agenda} \class{Rule}s for current \class{Module}.
+\end{funcdesc}
+
+\begin{funcdesc}{Reset}{}
+Reset current \class{Environment}.
+\end{funcdesc}
+
+\begin{funcdesc}{RestoreInstancesFromString}{s}
+Restore \class{Instance}s from the specified string.
+\end{funcdesc}
+
+\begin{funcdesc}{RuleList}{}
+Return a list of \class{Rule} names in current \class{Module}.
+\end{funcdesc}
+
+\begin{funcdesc}{Run}{\optional{limit}}
+Execute \class{Rule}s up to \var{limit} (which is an \class{int} if
+given). If \var{limit} is omitted, then no limitation is assumed and the
+program runs countinuously until all rules are executed. The function
+returns the number of rules that have been fired\footnote{This means,
+for instance, that continuously using this function and checking whether
+or not the result is less than the specified limit can give more control
+over the running CLIPS subprogram, eventually giving the ability to
+actively check for the end of the program.}.
+\end{funcdesc}
+
+\begin{funcdesc}{Save}{filename}
+Save constructs to the file specified by \var{filename}. The constructs are
+saved in text (human readable) form.
+\end{funcdesc}
+
+\begin{funcdesc}{SaveFacts}{filename \optional{, mode=\constant{LOCAL_SAVE}}}
+Save current \class{Fact}s to file specified by \var{filename}. The
+\var{mode} parameter can be one of \constant{LOCAL_SAVE} (for all
+\class{Fact}s whose \class{Template}s are defined in current
+\class{Module}) or \constant{VISIBLE_SAVE} (for all \class{Fact}s
+visible to current \class{Module}).
+\end{funcdesc}
+
+\begin{funcdesc}{SaveInstances}{filename \optional{, mode=\constant{LOCAL_SAVE}}}
+Save \class{Instance}s to file specified by \var{filename}. The
+\var{mode} parameter can be one of \constant{LOCAL_SAVE} (for all
+\class{Instance}s whose \class{Definstance}s are defined in current
+\class{Module}) or \constant{VISIBLE_SAVE} (for all \class{Instance}s
+visible to current \class{Module}).
+\end{funcdesc}
+
+\begin{funcdesc}{SendCommand}{cmd \optional{, verbose=\constant{False}}}
+Send a command to the underlying CLIPS engine, as if it was typed at the
+console in an interactive CLIPS session. This command could actually be
+useful when embedding a CLIPS shell in a Python program. Please note that
+other input than commands, in such a case, should be entered using the
+\var{StdinStream} input stream. If \var{verbose} is set to \constant{True}
+the possible\footnote{Except for the CLIPS printing functions, as for
+instance \code{printout}, that issue an output even when the flag is not
+set.} command output is sent to the appropriate output stream.
+\end{funcdesc}
+
+\begin{funcdesc}{SetExternalTraceback}{\optional{enabled=\constant{True}}}
+Allow or disallow functions called from within the CLIPS engine using
+\code{python-call} to print a standard traceback to \var{sys.stderr} in
+case an exception occurs. Please note that this does not mean that a
+real exception arises, as there is no possibility to catch Python
+exceptions in CLIPS code. In such case all failing Python functions will
+return the symbol \code{FALSE} to CLIPS\footnote{This is not always an
+error condition because a function can intentionally return boolean
+values to CLIPS. However the CLIPS engine will report an error message
+which can be read from the error stream.}. This behaviour is initially
+set to \constant{False}, as it is useful only for debugging purposes.
+This function is retained for backwards compatibility only: please use the
+\var{ExternalTraceback} flag of the \var{DebugConfig} object to enable or
+disable this feature instead.
+\end{funcdesc}
+
+\begin{funcdesc}{ShowGlobals}{}
+Print list of \class{Global} variables and their values to standard
+output (the \function{PrintGlobals()} functions only prints out
+\class{Global} variable names).
+\end{funcdesc}
+
+\begin{funcdesc}{TemplateList}{}
+Return a list of \class{Template} names.
+\end{funcdesc}
+
+\begin{funcdesc}{UnregisterPythonFunction}{name}
+Remove the function referred as \var{name} within the CLIPS engine from
+the set of functions that can be called via \code{python-call} calls.
+\end{funcdesc}
+
+
+Among other exception types, arising in cases that can also occur in
+Python, the \pyclips{} module can raise exceptions specific to CLIPS
+identified by the following:
+
+\begin{excdesc}{ClipsError}
+Exception raised when an operation fails in the CLIPS subsystem: normally
+it occurs when CLIPS finds an error, when an iteration is over or when an
+invalid value is passed to CLIPS. This exception is accompanied by
+explanatory text preceded by an alphanumeric code that can be used
+to programmatically identify the error.
+\end{excdesc}
+
+\begin{excdesc}{ClipsMemoryError}
+Severe memory error raised when the CLIPS subsystem is unable to allocate
+the needed memory. In normal circumstances, when an error of this type
+occurs, the CLIPS system has become inconsistent and the only way to
+recover is exiting. This exception is raised only in order to allow a
+developer to notify the user of the impossibility to continue.
+\end{excdesc}
+
+
+\begin{seealso}
+\sclipsapg{}
+\sclipsbpg{}
+\end{seealso}
+
+
