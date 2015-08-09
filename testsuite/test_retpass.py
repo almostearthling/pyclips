@@ -1,6 +1,6 @@
 # test_retpass.py
 
-"""revision: $Id: test_retpass.py 335 2008-01-13 01:50:50Z Franz $
+"""revision: $Id: test_retpass.py 368 2008-12-23 01:18:54Z Franz $
 TESTS:
 passing Fact objects as arguments
 passing Instance objects as arguments
@@ -51,7 +51,7 @@ class ctc_RetPass(ctestcase):
             e.SendCommand("(deffunction f () (return ?*g*))")
             e.Assert("(a)")
             e.Run()
-            f = clips.Eval("(f)")
+            f = e.Eval("(f)")
             self.assertEqual(f.Relation, clips.Symbol('a'))
 
     def ctf_RetInstances_01(self):
@@ -62,7 +62,7 @@ class ctc_RetPass(ctestcase):
             e.Reset()
             e.SendCommand("(defclass C (is-a USER))")
             e.SendCommand("(make-instance [i] of C)")
-            i = clips.Eval("(instance-address [i])")
+            i = e.Eval("(instance-address [i])")
             self.assertEqual(i.Name, clips.InstanceName('i'))
 
 

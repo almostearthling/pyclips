@@ -33,18 +33,9 @@ Please issue 'print clips.license' at the prompt for licensing information.
 """
 
 
-from _clips_wrap import *
-from _eclips_wrap import Environment, CurrentEnvironment
+from _clips_w import *
 from _license import license
 from _version import version, version_string
-
-
-# provide our __dict__ to the _clips_wrap in order to set up stock classes:
-# the name _setParentModuleDict will be removed later
-from _clips_wrap import _setParentModuleDict
-_setParentModuleDict(globals())
-del _setParentModuleDict
-
 
 
 # define the __all__ list so that the module can avoid useless names: in

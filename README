@@ -1,7 +1,7 @@
 PyCLIPS - a Python module to integrate CLIPS into Python
-(c) 2002-2008 Francesco Garosi/JKS
+(c) 2002-2011 Francesco Garosi/JKS
 
-Version 1.0 (release)
+Version 2.0b (beta)
 
 
 
@@ -49,7 +49,8 @@ REQUIREMENTS
 ============
 
 PyCLIPS requires Python 2.4 or higher to work. Recently it has been tested
-on Python 2.5. Previous versions of Python are not supported.
+on Python 2.6. Previous versions of Python are not supported. As of release
+2.0 of PyCLIPS, Python 3.x (for x >= 1) is supported.
 
 PyCLIPS also requires the CLIPS 6.23 or CLIPS 6.24 sources to compile.
 Compilation will fail against CLIPS version 6.22 or earlier: although the
@@ -58,15 +59,6 @@ CLIPS 6.23 which are required for PyCLIPS. If you don't need to stick to
 the former CLIPS version, please use CLIPS 6.24: the previous version lacks
 some features and PyCLIPS is mostly developed against the more recent
 release.
-
-I use GCC 3.x to compile PyCLIPS both on UNIX (Linux and Solaris) and on
-Win32. If Python was compiled using Visual C 9.0 (the one released with
-Visual Studio 2008 Express) and the Platform SDK, this environment does also
-build the module successfully, although with warnings due to deprecation of
-insecure functions. Win32 users are encouraged to use the prebuilt package.
-PyCLIPS can also be successfully compiled using the free Microsoft Visual
-C++ Toolkit 2003. However also this compiler will issue some warnings (see
-below) which are mostly safe to ignore.
 
 I do not know other dependencies or requirements to build PyCLIPS, but feel
 free to contact me for any annoyance.
@@ -86,7 +78,7 @@ the CLIPS source code.
 
 The sequence of operations should be as follows:
 
-    $ gunzip -c pyclips-1.0.X.Y.tar.gz | tar xvf -
+    $ gunzip -c pyclips-2.0.X.Y.tar.gz | tar xvf -
     $ cd pyclips
     $ python setup.py build
     $ su -c "python setup.py install"
@@ -277,11 +269,6 @@ at the following e-mail address:
 
     franzg -at- users -dot- sourceforge -dot- net
 
-I also have a web site, where I will occasionally write some news about this
-module as well:
-
-    http://www.jks.it
-
 Every kind of help is really welcome.
 
 Francesco Garosi
@@ -289,4 +276,4 @@ Francesco Garosi
 
 ---
 
-$Id: README 343 2008-02-22 01:35:38Z Franz $
+$Id: README 356 2008-12-10 00:23:22Z Franz $
