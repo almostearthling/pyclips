@@ -2,14 +2,16 @@
 
 This is a reboot of PyCLIPS on GitHub, as git and GitHub have become my favourite tools for developement.
 
-## PyCLIPS - a Python module to integrate CLIPS into Python
-## (c) 2002-2008 Francesco Garosi/JKS
+```
+PyCLIPS - a Python module to integrate CLIPS into Python
+(c) 2002-2008 Francesco Garosi/JKS
 
-## Version 1.0 (release)
+Version 1.0 (release)
 
 
 
-## RELEASE NOTES
+RELEASE NOTES
+=============
 
 This is a C module embedding CLIPS functionality. To build it, you need to
 download the source code for CLIPS, which can be found on its web site, at
@@ -48,7 +50,8 @@ system, while the SVN repository will also provide possibly unstable changes.
 
 
 
-## REQUIREMENTS
+REQUIREMENTS
+============
 
 PyCLIPS requires Python 2.4 or higher to work. Recently it has been tested
 on Python 2.5. Previous versions of Python are not supported.
@@ -75,7 +78,8 @@ free to contact me for any annoyance.
 
 
 
-## INSTALLATION
+INSTALLATION
+============
 
 
 1) from the source
@@ -144,7 +148,8 @@ available for some Python versions.
 
 
 
-## LICENSE
+LICENSE
+=======
 
 PyCLIPS is released under the Library General Public License (LGPL): a copy
 of the license text is included in the manual. Also, if you install the
@@ -166,7 +171,8 @@ of the LGPL.
 
 
 
-## DOCUMENTATION
+DOCUMENTATION
+=============
 
 The documentation can be found on SourceForge, at the PyCLIPS download page.
 It is distributed as a single PDF file, generated from the TeX sources that
@@ -176,7 +182,8 @@ CLIPS are available as PDF on its web site.
 
 
 
-## PATCHES
+PATCHES
+=======
 
 Recent versions of PyCLIPS allow the possibility to easily apply optional
 patches to the official CLIPS source. Mandatory patches are however always
@@ -193,7 +200,7 @@ in developer forums and from contributions provided by other developers
 after addressing particular issues that were found after the release of
 the official CLIPS source. On the other hand, patches written for special
 platforms are normally mandatory on those: for example, the "ia64" patch
-set is needed to successfully pass the test suite on x86_64 platforms. 
+set is needed to successfully pass the test suite on x86_64 platforms.
 The other fixes (marked as "bgfx") should be considered mandatory, as they
 have officially been provided (sometimes as files to be replaced) by the
 people who invented CLIPS, and will hopefully be removed as soon as the
@@ -208,7 +215,8 @@ patch the files.
 
 
 
-## TO DO
+TO DO
+=====
 
 Testing thoroughly has to be considered a primary goal. Also, in the same
 spirit, writing more tests for the test suite is needed: I will be grateful
@@ -235,7 +243,8 @@ contribution to the project.
 
 
 
-## ACKNOWLEDGEMENTS
+ACKNOWLEDGEMENTS
+================
 
 I'd like to thank the CLIPS crew for writing CLIPS, putting it in the Public
 Domain, and for writing the extensive documentation. And the people at CLIPS
@@ -265,7 +274,8 @@ I am looking forward to having many people to thank here. :)
 
 
 
-## CONTACT INFORMATION
+CONTACT INFORMATION
+===================
 
 I can be reached for suggestions, criticisms and reports about any annoyance
 at the following e-mail address:
@@ -281,3 +291,8 @@ Every kind of help is really welcome.
 
 Francesco Garosi
 
+
+---
+
+$Id: README 343 2008-02-22 01:35:38Z Franz $
+```
