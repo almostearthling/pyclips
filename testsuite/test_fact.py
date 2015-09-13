@@ -244,9 +244,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_04(self):
         """Testing: Template.InitialFact, Template.NextFact"""
-        if clips.CLIPS_VERSION < "6.23":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -272,9 +269,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_05(self):
         """Testing: Template.Slots.AllowedValues, Template.Slots.Cardinality"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -295,9 +289,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_06(self):
         """Testing: Template.Slots.HasDefault, Template.Slots.DefaultValue"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -317,9 +308,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_07(self):
         """Testing: Template.Slots.Exists, Template.Slots.Range"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -344,9 +332,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_08(self):
         """Testing: Template.Slots.Names, Template.Slots.Types"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -372,9 +357,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_09(self):
         """Testing: Template.Slots.IsSinglefield, Template.Slots.IsMultifield"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()

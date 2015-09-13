@@ -132,21 +132,9 @@ setup_h_templ = """\
 #endif
 
 
-#if CLIPS_MAJOR >= 6
-
-#if CLIPS_MINOR < 23
-#error "Cannot build using CLIPS version less than 6.23"
-#endif /* CLIPS_MINOR >= 23 */
-
 #define VOID     void
 #define VOID_ARG void
 #define STD_SIZE size_t
-
-#if CLIPS_MINOR < 24
-#define BOOLEAN int
-#else
-#define intBool int
-#endif /* CLIPS_MINOR < 24 */
 
 #define globle
 
@@ -183,21 +171,6 @@ setup_h_templ = """\
 #define WINDOW_INTERFACE 1
 
 #define DEVELOPER 0
-
-#if CLIPS_MINOR < 24
-#define AUXILIARY_MESSAGE_HANDLERS 1
-#define DYNAMIC_SALIENCE 1
-#define IMPERATIVE_MESSAGE_HANDLERS 1
-#define IMPERATIVE_METHODS 1
-#define INCREMENTAL_RESET 1
-#define INSTANCE_PATTERN_MATCHING 1
-#define LOGICAL_DEPENDENCIES  1
-#define SHORT_LINK_NAMES 0
-#endif  /* CLIPS_MINOR < 24 */
-
-#else   /* CLIPS_MAJOR >= 6 */
-#error "Cannot build using CLIPS version less than 6.23"
-#endif
 
 #include "envrnmnt.h"
 

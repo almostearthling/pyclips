@@ -57,18 +57,6 @@
 #define PYFUNC
 #endif
 
-#if (CLIPS_MAJOR == 6 && CLIPS_MINOR < 23)
-#error "at least CLIPS v6.23 is required"
-#endif
-
-/* these are needed to define manifest constants */
-#if (CLIPS_MAJOR == 6 && CLIPS_MINOR < 24)
-#define NO_DEFAULT 0
-#define STATIC_DEFAULT  1
-#define DYNAMIC_DEFAULT 2
-#endif
-
-
 /* True/False symbols */
 #define CLIPS_TRUE_SYMBOL TrueSymbol()
 #define CLIPS_FALSE_SYMBOL FalseSymbol()

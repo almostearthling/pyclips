@@ -2360,8 +2360,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* deftemplateSlotAllowedValues */
 static char g_deftemplateSlotAllowedValues__doc__[] = "\
 deftemplateSlotAllowedValues(deftemplate, name) -> (MULTIFIELD, list)\n\
@@ -2655,29 +2653,6 @@ BEGIN_FAIL
     SKIP();
 END_FAIL
 }
-
-#else
-UNIMPLEMENT_VERSION(deftemplateSlotAllowedValues,
-                    g_deftemplateSlotAllowedValues)
-UNIMPLEMENT_VERSION(deftemplateSlotCardinality,
-                    g_deftemplateSlotCardinality)
-UNIMPLEMENT_VERSION(deftemplateSlotDefaultP,
-                    g_deftemplateSlotDefaultP)
-UNIMPLEMENT_VERSION(deftemplateSlotDefaultValue,
-                    g_deftemplateSlotDefaultValue)
-UNIMPLEMENT_VERSION(deftemplateSlotExistP,
-                    g_deftemplateSlotExistP)
-UNIMPLEMENT_VERSION(deftemplateSlotMultiP,
-                    g_deftemplateSlotMultiP)
-UNIMPLEMENT_VERSION(deftemplateSlotNames,
-                    g_deftemplateSlotNames)
-UNIMPLEMENT_VERSION(deftemplateSlotRange,
-                    g_deftemplateSlotRange)
-UNIMPLEMENT_VERSION(deftemplateSlotSingleP,
-                    g_deftemplateSlotSingleP)
-UNIMPLEMENT_VERSION(deftemplateSlotTypes,
-                    g_deftemplateSlotTypes)
-#endif /* CLIPS_MINOR > 23 */
 
 /* findDeftemplate */
 static char g_findDeftemplate__doc__[] = "\
@@ -3359,8 +3334,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* ppFact */
 static char g_ppFact__doc__[] = "\
 ppFact(fact, output [, ignoredefault])\n\
@@ -3388,9 +3361,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#else
-UNIMPLEMENT_VERSION(ppFact, g_ppFact)
-#endif /* CLIPS_MINOR > 23 */
 
 /* putFactSlot */
 static char g_putFactSlot__doc__[] = "\
@@ -6987,8 +6957,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* slotAllowedClasses */
 static char g_slotAllowedClasses__doc__[] = "\
 slotAllowedClasses(defclass, name) -> (MULTIFIELD, list)\n\
@@ -7053,10 +7021,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#else
-UNIMPLEMENT_VERSION(slotAllowedClasses, g_slotAllowedClasses)
-UNIMPLEMENT_VERSION(slotDefaultValue, g_slotDefaultValue)
-#endif /* CLIPS_MINOR > 23 */
 
 /* slotDirectAccessP */
 static char g_slotDirectAccessP__doc__[] = "\
@@ -9068,38 +9032,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-/* forceCleanup() [undocumented] */
-#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
-static char g_forceCleanup__doc__[] = "\
-forceCleanup([alldepths, heuristics])\n\
-attempt to force a garbage collection\n\
-arguments:\n\
-  alldepths (bool) - True to clean up all depths (default)\n\
-  heuristics (bool) - True to use heuristics (default)";
-static PyObject *g_forceCleanup(PyObject *self, PyObject *args) {
-    void *env = GetCurrentEnvironment();
-    PyObject *alldepths = NULL, *heuristics = NULL;
-
-    if(!PyArg_ParseTuple(args, "|OO", &alldepths, &heuristics))
-        FAIL();
-    ACQUIRE_MEMORY_ERROR();
-    if(EngineData(env)->ExecutingRule != NULL) {
-        RELEASE_MEMORY_ERROR();
-        ERROR_CLIPSSYS_CLEANUP();
-        FAIL();
-    }
-    PeriodicCleanup(env,
-        alldepths ? TRUE : PyObject_IsTrue(alldepths),
-        heuristics ? TRUE : PyObject_IsTrue(heuristics));
-    RELEASE_MEMORY_ERROR();
-    RETURN_NONE();
-
-BEGIN_FAIL
-    SKIP();
-END_FAIL
-}
-#endif /* <= 6.24 */
-
 /* ======================================================================== */
 
 
@@ -9706,8 +9638,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* deftemplateSlotAllowedValues */
 static char e_deftemplateSlotAllowedValues__doc__[] = "\
 env_deftemplateSlotAllowedValues(env, deftemplate, name) -> (MULTIFIELD, list)\n\
@@ -10052,28 +9982,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#else
-UNIMPLEMENT_VERSION(env_deftemplateSlotAllowedValues,
-                    e_deftemplateSlotAllowedValues)
-UNIMPLEMENT_VERSION(env_deftemplateSlotCardinality,
-                    e_deftemplateSlotCardinality)
-UNIMPLEMENT_VERSION(env_deftemplateSlotDefaultP,
-                    e_deftemplateSlotDefaultP)
-UNIMPLEMENT_VERSION(env_deftemplateSlotDefaultValue,
-                    e_deftemplateSlotDefaultValue)
-UNIMPLEMENT_VERSION(env_deftemplateSlotExistP,
-                    e_deftemplateSlotExistP)
-UNIMPLEMENT_VERSION(env_deftemplateSlotMultiP,
-                    e_deftemplateSlotMultiP)
-UNIMPLEMENT_VERSION(env_deftemplateSlotNames,
-                    e_deftemplateSlotNames)
-UNIMPLEMENT_VERSION(env_deftemplateSlotRange,
-                    e_deftemplateSlotRange)
-UNIMPLEMENT_VERSION(env_deftemplateSlotSingleP,
-                    e_deftemplateSlotSingleP)
-UNIMPLEMENT_VERSION(env_deftemplateSlotTypes,
-                    e_deftemplateSlotTypes)
-#endif /* CLIPS_MINOR > 23 */
 
 /* env_findDeftemplate */
 static char e_findDeftemplate__doc__[] = "\
@@ -10881,8 +10789,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* ppFact */
 static char e_ppFact__doc__[] = "\
 env_ppFact(env, fact, output [, ignoredefault])\n\
@@ -10912,10 +10818,6 @@ BEGIN_FAIL
     SKIP();
 END_FAIL
 }
-
-#else
-UNIMPLEMENT_VERSION(env_ppFact, e_ppFact)
-#endif /* CLIPS_MINOR > 23 */
 
 /* env_putFactSlot */
 static char e_putFactSlot__doc__[] = "\
@@ -15193,8 +15095,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#if CLIPS_MINOR > 23
-
 /* slotAllowedClasses */
 static char e_slotAllowedClasses__doc__[] = "\
 env_slotAllowedClasses(env, defclass, name) -> (MULTIFIELD, list)\n\
@@ -15271,10 +15171,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-#else
-UNIMPLEMENT_VERSION(env_slotAllowedClasses, e_slotAllowedClasses)
-UNIMPLEMENT_VERSION(env_slotDefaultValue, e_slotDefaultValue)
-#endif /* CLIPS_MINOR > 23 */
 
 /* env_slotDirectAccessP */
 static char e_slotDirectAccessP__doc__[] = "\
@@ -17673,43 +17569,6 @@ BEGIN_FAIL
 END_FAIL
 }
 
-/* env_forceCleanup() [undocumented] */
-#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
-static char e_forceCleanup__doc__[] = "\
-env_forceCleanup(env [, alldepths, heuristics])\n\
-attempt to force a garbage collection\n\
-arguments:\n\
-  alldepths (bool) - true to clean up all depths (default)\n\
-  heuristics (bool) - true to use heuristics (default)";
-static PyObject *e_forceCleanup(PyObject *self, PyObject *args) {
-    clips_EnvObject *pyenv = NULL;
-    void *env = NULL;
-    PyObject *alldepths = NULL, *heuristics = NULL;
-
-    if(!PyArg_ParseTuple(args, "O!|OO",
-                         &clips_EnvType, &pyenv,
-                         &alldepths, &heuristics))
-        FAIL();
-    CHECK_NOCURENV(pyenv);
-    CHECK_VALID_ENVIRONMENT(pyenv);
-    env = clips_environment_value(pyenv);
-    if(EngineData(env)->ExecutingRule != NULL) {
-        ERROR_CLIPSSYS_CLEANUP();
-        FAIL();
-    }
-    ACQUIRE_MEMORY_ERROR();
-    PeriodicCleanup(env,
-        alldepths ? TRUE : PyObject_IsTrue(alldepths),
-        heuristics ? TRUE : PyObject_IsTrue(heuristics));
-    RELEASE_MEMORY_ERROR();
-    RETURN_NONE();
-
-BEGIN_FAIL
-    SKIP();
-END_FAIL
-}
-#endif /* <= 6.24 */
-
 /* ======================================================================== */
 
 /* 8.2 - Memory Management */
@@ -19163,9 +19022,6 @@ static PyMethodDef g_methods[] = {
     MMAP_ENTRY(removeClearFunction, g_removeClearFunction),
     MMAP_ENTRY(removePeriodicFunction, g_removePeriodicFunction),
     MMAP_ENTRY(removeResetFunction, g_removeResetFunction),
-#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
-    MMAP_ENTRY(forceCleanup, g_forceCleanup),
-#endif
 
 /* -------------------------------------------------------------------- */
 
@@ -19445,9 +19301,6 @@ static PyMethodDef g_methods[] = {
     MMAP_ENTRY(env_removeClearFunction, e_removeClearFunction),
     MMAP_ENTRY(env_removePeriodicFunction, e_removePeriodicFunction),
     MMAP_ENTRY(env_removeResetFunction, e_removeResetFunction),
-#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
-    MMAP_ENTRY(env_forceCleanup, e_forceCleanup),
-#endif
 
     /* -------------------------------------------------------------------- */
 
