@@ -1,0 +1,4 @@
+include *.h
+include loptr.c
+include ./clipssrc/*.h
+include ./clipssrc/*.c

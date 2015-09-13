@@ -3485,7 +3485,7 @@ static PyObject *g_saveFacts(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    if(!SaveFacts(fn, scope, NULL)) {
+    if(!SaveFacts(fn, scope)) {
         RELEASE_MEMORY_ERROR();
         ERROR_CLIPS_IO();
         FAIL();
@@ -7432,7 +7432,7 @@ static PyObject *g_binarySaveInstances(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    i = BinarySaveInstances(fn, i, NULL, TRUE);
+    i = BinarySaveInstances(fn, i);
     RELEASE_MEMORY_ERROR();
     if(i < 0) {
         ERROR_CLIPS_IO();
@@ -8007,7 +8007,7 @@ static PyObject *g_saveInstances(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    i = SaveInstances(fn, i, NULL, TRUE);
+    i = SaveInstances(fn, i);
     RELEASE_MEMORY_ERROR();
     if(i < 0) {
         ERROR_CLIPS_IO();
@@ -9069,6 +9069,7 @@ END_FAIL
 }
 
 /* forceCleanup() [undocumented] */
+#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
 static char g_forceCleanup__doc__[] = "\
 forceCleanup([alldepths, heuristics])\n\
 attempt to force a garbage collection\n\
@@ -9097,7 +9098,7 @@ BEGIN_FAIL
     SKIP();
 END_FAIL
 }
-
+#endif /* <= 6.24 */
 
 /* ======================================================================== */
 
@@ -9768,7 +9769,7 @@ static PyObject *e_deftemplateSlotCardinality(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotCardinality(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py(&o);
+    rv = i_do2py_e(env, &o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -9836,7 +9837,7 @@ static PyObject *e_deftemplateSlotDefaultValue(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotDefaultValue(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py(&o);
+    rv = i_do2py_e(env, &o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -9933,7 +9934,7 @@ static PyObject *e_deftemplateSlotNames(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotNames(env, clips_deftemplate_value(p), &o);
-    rv = i_do2py(&o);
+    rv = i_do2py_e(env, &o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -9970,7 +9971,7 @@ static PyObject *e_deftemplateSlotRange(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotRange(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py(&o);
+    rv = i_do2py_e(env, &o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -10038,7 +10039,7 @@ static PyObject *e_deftemplateSlotTypes(PyObject *self, PyObject *args) {
     ECHECK_DEFTEMPLATE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvDeftemplateSlotTypes(env, clips_deftemplate_value(p), name, &o);
-    rv = i_do2py(&o);
+    rv = i_do2py_e(env, &o);
     RELEASE_MEMORY_ERROR();
     if(!rv) {
         ERROR_CLIPS_RETVAL();
@@ -11027,7 +11028,7 @@ static PyObject *e_saveFacts(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    if(!EnvSaveFacts(env, fn, scope, NULL)) {
+    if(!EnvSaveFacts(env, fn, scope)) {
         RELEASE_MEMORY_ERROR();
         ERROR_CLIPS_IO();
         FAIL();
@@ -11106,7 +11107,7 @@ static PyObject *e_factExistp(PyObject *self, PyObject *args) {
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
         FAIL();
     CHECK_VALID_ENVIRONMENT(pyenv);
-    i = FactExistp(clips_fact_value(p));
+    i = EnvFactExistp(clips_environment_value(pyenv), clips_fact_value(p));
     RETURN_BOOL(i);
 
 BEGIN_FAIL
@@ -13957,7 +13958,7 @@ static PyObject *e_isDefgenericDeletable(PyObject *self, PyObject *args) {
         FAIL();
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
-    i = IsDefgenericDeletable(clips_defgeneric_value(p));
+    i = EnvIsDefgenericDeletable(env, clips_defgeneric_value(p));
     RETURN_BOOL(i);
 
 BEGIN_FAIL
@@ -15728,7 +15729,7 @@ static PyObject *e_binarySaveInstances(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    i = EnvBinarySaveInstances(env, fn, i, NULL, TRUE);
+    i = EnvBinarySaveInstances(env, fn, i);
     RELEASE_MEMORY_ERROR();
     if(i < 0) {
         ERROR_CLIPS_IO();
@@ -15975,10 +15976,10 @@ static PyObject *e_getInstanceClass(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
-    ENV_CHECK_VALID_INSTANCE(env, p);
     CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
+    ENV_CHECK_VALID_INSTANCE(env, p);
     ACQUIRE_MEMORY_ERROR();
     ptr = EnvGetInstanceClass(env, clips_instance_value(p));
     RELEASE_MEMORY_ERROR();
@@ -16015,9 +16016,9 @@ static PyObject *e_getInstanceName(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
-    ENV_CHECK_VALID_INSTANCE(env, p);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
+    ENV_CHECK_VALID_INSTANCE(env, p);
     ACQUIRE_MEMORY_ERROR();
     name = EnvGetInstanceName(env, clips_instance_value(p));
     RELEASE_MEMORY_ERROR();
@@ -16053,9 +16054,9 @@ static PyObject *e_getInstancePPForm(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_InstanceType, &p))
         FAIL();
-    ENV_CHECK_VALID_INSTANCE(env, p);
     CHECK_VALID_ENVIRONMENT(pyenv);
     env = clips_environment_value(pyenv);
+    ENV_CHECK_VALID_INSTANCE(env, p);
     ACQUIRE_MEMORY_ERROR();
     EnvGetInstancePPForm(env, buffer,
         ppbuffer_size-1, clips_instance_value(p));
@@ -16136,8 +16137,10 @@ static PyObject *e_getNextInstanceInClass(PyObject *self, PyObject *args) {
         &clips_InstanceType, &p)) FAIL();
     CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
-    if(p) { ENV_CHECK_VALID_INSTANCE(env, p); }
     env = clips_environment_value(pyenv);
+    if(p) {
+        ENV_CHECK_VALID_INSTANCE(env, p);
+    }
     ECHECK_DEFCLASS(env, c);
     ACQUIRE_MEMORY_ERROR();
     ptr = EnvGetNextInstanceInClass(env,
@@ -16182,9 +16185,10 @@ static PyObject *e_getNextInstanceInClassAndSubclasses(PyObject *self, PyObject 
         FAIL();
     CHECK_NOCURENV(pyenv);
     CHECK_VALID_ENVIRONMENT(pyenv);
-    if(p)
-        ENV_CHECK_VALID_INSTANCE(env, p);
     env = clips_environment_value(pyenv);
+    if(p) {
+        ENV_CHECK_VALID_INSTANCE(env, p);
+    }
     ECHECK_DEFCLASS(env, c);
     /* we should iterate from the start in order to keep the iteration data */
     ACQUIRE_MEMORY_ERROR();
@@ -16395,7 +16399,7 @@ static PyObject *e_saveInstances(PyObject *self, PyObject *args) {
         FAIL();
     }
     ACQUIRE_MEMORY_ERROR();
-    i = EnvSaveInstances(env, fn, i, NULL, TRUE);
+    i = EnvSaveInstances(env, fn, i);
     RELEASE_MEMORY_ERROR();
     if(i < 0) {
         ERROR_CLIPS_IO();
@@ -16437,7 +16441,7 @@ static PyObject *e_send(PyObject *self, PyObject *args) {
     SetType(o, INSTANCE_ADDRESS);
     SetValue(o, clips_instance_value(p));
     EnvSend(env, &o, msg, msa, &rv);
-    q = i_do2py(&rv);
+    q = i_do2py_e(env, &rv);
     RELEASE_MEMORY_ERROR();
     ENV_CLIPS_UNLOCK_GC(pyenv);
     if(q) {
@@ -17670,6 +17674,7 @@ END_FAIL
 }
 
 /* env_forceCleanup() [undocumented] */
+#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
 static char e_forceCleanup__doc__[] = "\
 env_forceCleanup(env [, alldepths, heuristics])\n\
 attempt to force a garbage collection\n\
@@ -17703,6 +17708,7 @@ BEGIN_FAIL
     SKIP();
 END_FAIL
 }
+#endif /* <= 6.24 */
 
 /* ======================================================================== */
 
@@ -17733,7 +17739,7 @@ static PyObject *m_releaseMem(PyObject *self, PyObject *args) {
     if(!PyArg_ParseTuple(args, "O|i", &tell, &b))
         FAIL();
     ACQUIRE_MEMORY_ERROR();
-    b1 = ReleaseMem(b, PyObject_IsTrue(tell));
+    b1 = ReleaseMem(b);
     RELEASE_MEMORY_ERROR();
     RETURN_INT(b1);
 
@@ -19157,7 +19163,9 @@ static PyMethodDef g_methods[] = {
     MMAP_ENTRY(removeClearFunction, g_removeClearFunction),
     MMAP_ENTRY(removePeriodicFunction, g_removePeriodicFunction),
     MMAP_ENTRY(removeResetFunction, g_removeResetFunction),
+#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
     MMAP_ENTRY(forceCleanup, g_forceCleanup),
+#endif
 
 /* -------------------------------------------------------------------- */
 
@@ -19437,7 +19445,9 @@ static PyMethodDef g_methods[] = {
     MMAP_ENTRY(env_removeClearFunction, e_removeClearFunction),
     MMAP_ENTRY(env_removePeriodicFunction, e_removePeriodicFunction),
     MMAP_ENTRY(env_removeResetFunction, e_removeResetFunction),
+#if (CLIPS_MAJOR <= 6 && CLIPS_MINOR <= 24)
     MMAP_ENTRY(env_forceCleanup, e_forceCleanup),
+#endif
 
     /* -------------------------------------------------------------------- */
 

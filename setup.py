@@ -37,7 +37,7 @@ print "Setup revision: %s" % __revision__
 PYCLIPS_MAJOR = 1
 PYCLIPS_MINOR = 0
 PYCLIPS_PATCHLEVEL = 7
-PYCLIPS_INCREMENTAL = 341
+PYCLIPS_INCREMENTAL = 343
 PYCLIPS_VERSION = "%s.%s.%s.%s" % (
     PYCLIPS_MAJOR,
     PYCLIPS_MINOR,
@@ -151,7 +151,6 @@ setup_h_templ = """\
 #define globle
 
 #define ALLOW_ENVIRONMENT_GLOBALS 1
-#define BASIC_IO 1
 #define BLOAD 0
 #define BLOAD_AND_BSAVE 1
 #define BLOAD_ONLY 0
@@ -170,12 +169,11 @@ setup_h_templ = """\
 #define DEFRULE_CONSTRUCT 1
 #define DEFTEMPLATE_CONSTRUCT 1
 #define EMACS_EDITOR 0
-#define ENVIRONMENT_API_ONLY 0
-#define EX_MATH 1
-#define EXT_IO 1
+#define EXTENDED_MATH_FUNCTIONS 1
 #define FACT_SET_QUERIES 1
 #define HELP_FUNCTIONS 0
 #define INSTANCE_SET_QUERIES 1
+#define IO_FUNCTIONS 1
 #define MULTIFIELD_FUNCTIONS 1
 #define OBJECT_SYSTEM 1
 #define PROFILING_FUNCTIONS 1
@@ -339,7 +337,7 @@ from _clips_wrap import Nil, Integer, Float, String, Symbol, InstanceName, \\
                         ClipsSymbolType, ClipsInstanceNameType, \\
                         ClipsMultifieldType, ClipsNilType, \\
                         _setStockClasses, _accepts_method, _forces_method, \\
-                        AROUND, BEFORE, PRIMARY, AFTER
+                        AROUND, BEFORE, PRIMARY, AFTER, CLIPS_VERSION
 
 
 
@@ -922,7 +920,7 @@ else:
 
 
 setup(name="pyclips",
-      version="%s-clips_%s" % (PYCLIPS_VERSION, clips_version),
+      version=PYCLIPS_VERSION,
       description="Python CLIPS interface",
       long_description=__doc__,
       author="Francesco Garosi",

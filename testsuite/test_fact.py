@@ -389,23 +389,4 @@ class ctc_Fact(ctestcase):
             self.assert_(not t1.Slots.IsSinglefield('s2'))
             self.assert_(t1.Slots.IsMultifield('s2'))
 
-    def ctf_Template_10(self):
-        """Testing: Template Facts coherence between assertions"""
-        for x in self.envdict.keys():
-            e = self.envdict[x]
-            e.Clear()
-            e.Reset()
-            t1 = e.BuildTemplate(
-                "t1", """
-                (slot s1)
-                """, "test template")
-            f11 = t1.BuildFact()
-            f11.Slots['s1'] = clips.Symbol("sym13")
-            f12 = t1.BuildFact()
-            f12.Slots['s1'] = clips.Symbol("sym42")
-            f11.Assert()
-            self.assertEqual(f11.Slots['s1'], clips.Symbol("sym13"))
-            self.assertEqual(f12.Slots['s1'], clips.Symbol("sym42"))
-
-
 # end.

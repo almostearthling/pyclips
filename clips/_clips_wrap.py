@@ -1496,9 +1496,9 @@ class Rule(object):
 
     def PrintMatches(self):
         """print partial matches to standard output"""
-        _c.routerClear("temporary")
-        _c.matches("temporary", self.__defrule)
-        s = _c.routerRead("temporary")
+        _c.routerClear("wdisplay")
+        _c.matches("wdisplay", self.__defrule)
+        s = _c.routerRead("wdisplay")
         if s:
             _sys.stdout.write(s)
 
