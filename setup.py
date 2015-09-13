@@ -56,9 +56,6 @@ APPLY_PATCHSETS = [
     'test',     # "experimental" (unofficial) but useful patches
     ]
 
-# this will be used to download CLIPS source if not found
-CLIPS_SRC_URL = "http://pyclips.sourceforge.net/files/CLIPSSrc.zip"
-
 # standard indentation for conversion (4 spaces)
 INDENT = " " * 4
 
@@ -136,6 +133,7 @@ setup_h_templ = """\
 #define VOID_ARG void
 #define STD_SIZE size_t
 
+#define intBool int
 #define globle
 
 #define ALLOW_ENVIRONMENT_GLOBALS 1
@@ -633,53 +631,6 @@ def normalize_eols(t):
     li = map(lambda x: x.rstrip(), li)
     li = map(_remove_badchars, li)
     return li
-
-
-if not os.path.exists(ClipsLIB_dir):
-    if not os.path.exists(ClipsSrcZIP):
-        # try to download file from official site
-        import urllib
-        print "CLIPS source archive (%s) not found, " \
-              "trying to download it for you..." % ClipsSrcZIP
-        try:
-            f = urllib.urlopen(CLIPS_SRC_URL)
-            s = f.read()
-            if not s:
-                raise   # anyway we'll answer that the source wasn't found
-            f = open(ClipsSrcZIP, 'wb')
-            f.write(s)
-            f.close()
-            print "Download successful, continuing build."
-            print "Please review CLIPS license in the downloaded ZIP file!"
-        except:
-            print "Download FAILED!"
-            print nozip_notice % ClipsSrcZIP
-            sys.exit(2)
-    import zipfile
-    try:
-        print "Opening CLIPS source archive (%s)..." % ClipsSrcZIP
-        zf = zipfile.ZipFile(ClipsSrcZIP)
-        os.mkdir(ClipsLIB_dir)
-        li = zf.namelist()
-        for x in li:
-            n = _p(ClipsLIB_dir, os.path.basename(x))
-            if n.endswith('.h') or n.endswith('.c'):
-                sys.stdout.write("\tExtracting %s... " % n)
-                li = normalize_eols(zf.read(x))
-                f = open(n, 'w')
-                for t in li:
-                    f.write("%s\n" % t)
-                f.close()
-                sys.stdout.write("done.\n")
-        zf.close()
-        print "All CLIPS source files extracted, continuing build."
-    except zipfile.error:
-        print badzip_notice % ClipsSrcZIP
-        sys.exit(2)
-    except:
-        print nozip_notice % ClipsSrcZIP
-        sys.exit(2)
-
 
 
 # ----------------------------------------------------------------------------
