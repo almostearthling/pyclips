@@ -105,172 +105,14 @@
 /* EnvMatches: C access routine */
 /*   for the matches command.   */
 /********************************/
+
 globle BOOLEAN EnvMatches_PY(
   void *theEnv,
   char *logicalName,
   void *theRule)
   {
-   struct defrule *rulePtr, *tmpPtr;
-   struct partialMatch *listOfMatches, **theStorage;
-   struct joinNode *theJoin, *lastJoin;
-   int i, depth;
-   ACTIVATION *agendaPtr;
-   int flag;
-   int matchesDisplayed;
-
-   /*=================================================*/
-   /* Loop through each of the disjuncts for the rule */
-   /*=================================================*/
-
-   for (rulePtr = (struct defrule *) theRule, tmpPtr = rulePtr;
-        rulePtr != NULL;
-        rulePtr = rulePtr->disjunct)
-     {
-      /*======================================*/
-      /* Determine the last join in the rule. */
-      /*======================================*/
-
-      lastJoin = rulePtr->lastJoin;
-
-      /*===================================*/
-      /* Determine the number of patterns. */
-      /*===================================*/
-
-      depth = GetPatternNumberFromJoin(lastJoin);
-
-      /*=========================================*/
-      /* Store the alpha memory partial matches. */
-      /*=========================================*/
-
-      theStorage = (struct partialMatch **)
-                   genalloc(theEnv,(unsigned) (depth * sizeof(struct partialMatch)));
-
-      theJoin = lastJoin;
-      i = depth - 1;
-      while (theJoin != NULL)
-        {
-         if (theJoin->joinFromTheRight)
-           { theJoin = (struct joinNode *) theJoin->rightSideEntryStructure; }
-         else
-           {
-            theStorage[i] = ((struct patternNodeHeader *) theJoin->rightSideEntryStructure)->alphaMemory;
-            i--;
-            theJoin = theJoin->lastLevel;
-           }
-        }
-
-      /*========================================*/
-      /* List the alpha memory partial matches. */
-      /*========================================*/
-
-      for (i = 0; i < depth; i++)
-        {
-         if (GetHaltExecution(theEnv) == TRUE)
-           {
-            genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-            return(TRUE);
-           }
-
-         EnvPrintRouter(theEnv,logicalName,"Matches for Pattern ");
-         PrintLongInteger(theEnv,logicalName,(long int) i + 1);
-         EnvPrintRouter(theEnv,logicalName,"\n");
-
-         listOfMatches = theStorage[i];
-         if (listOfMatches == NULL) EnvPrintRouter(theEnv,logicalName," None\n");
-
-         while (listOfMatches != NULL)
-           {
-            if (GetHaltExecution(theEnv) == TRUE)
-              {
-               genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-               return(TRUE);
-              }
-            PrintPartialMatch(theEnv,logicalName,listOfMatches);
-            EnvPrintRouter(theEnv,logicalName,"\n");
-            listOfMatches = listOfMatches->next;
-           }
-        }
-
-      genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-
-      /*========================================*/
-      /* Store the beta memory partial matches. */
-      /*========================================*/
-
-      depth = lastJoin->depth;
-      theStorage = (struct partialMatch **) genalloc(theEnv,(unsigned) (depth * sizeof(struct partialMatch)));
-
-      theJoin = lastJoin;
-      for (i = depth - 1; i >= 0; i--)
-        {
-         theStorage[i] = theJoin->beta;
-         theJoin = theJoin->lastLevel;
-        }
-
-      /*=======================================*/
-      /* List the beta memory partial matches. */
-      /*=======================================*/
-
-      for (i = 1; i < depth; i++)
-        {
-         if (GetHaltExecution(theEnv) == TRUE)
-           {
-            genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-            return(TRUE);
-           }
-
-         matchesDisplayed = 0;
-         EnvPrintRouter(theEnv,logicalName,"Partial matches for CEs 1 - ");
-         PrintLongInteger(theEnv,logicalName,(long int) i + 1);
-         EnvPrintRouter(theEnv,logicalName,"\n");
-         listOfMatches = theStorage[i];
-
-         while (listOfMatches != NULL)
-           {
-            if (GetHaltExecution(theEnv) == TRUE)
-              {
-               genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-               return(TRUE);
-              }
-
-            if (listOfMatches->counterf == FALSE)
-              {
-               matchesDisplayed++;
-               PrintPartialMatch(theEnv,logicalName,listOfMatches);
-               EnvPrintRouter(theEnv,logicalName,"\n");
-              }
-            listOfMatches = listOfMatches->next;
-           }
-
-         if (matchesDisplayed == 0) { EnvPrintRouter(theEnv,logicalName," None\n"); }
-        }
-
-      genfree(theEnv,theStorage,(unsigned) (depth * sizeof(struct partialMatch)));
-     }
-
-   /*===================*/
-   /* List activations. */
-   /*===================*/
-
-   rulePtr = tmpPtr;
-   EnvPrintRouter(theEnv,logicalName,"Activations\n");
-   flag = 1;
-   for (agendaPtr = (struct activation *) EnvGetNextActivation(theEnv,NULL);
-        agendaPtr != NULL;
-        agendaPtr = (struct activation *) EnvGetNextActivation(theEnv,agendaPtr))
-     {
-      if (GetHaltExecution(theEnv) == TRUE) return(TRUE);
-
-      if (((struct activation *) agendaPtr)->theRule->header.name == rulePtr->header.name)
-        {
-         flag = 0;
-         PrintPartialMatch(theEnv,logicalName,GetActivationBasis(agendaPtr));
-         EnvPrintRouter(theEnv,logicalName,"\n");
-        }
-     }
-
-   if (flag) EnvPrintRouter(theEnv,logicalName," None\n");
-
+   DATA_OBJECT result;
+   EnvMatches(theEnv, theRule, VERBOSE, &result);
    return(TRUE);
   }
 
@@ -341,19 +183,6 @@ globle BOOLEAN EnvClear_PY(
 #if DEBUGGING_FUNCTIONS
    EnvDeactivateRouter(theEnv,WTRACE);
 #endif
-
-   /*===========================================*/
-   /* Perform periodic cleanup if the clear was */
-   /* issued from an embedded controller.       */
-   /*===========================================*/
-
-   if ((EvaluationData(theEnv)->CurrentEvaluationDepth == 0) && (! CommandLineData(theEnv)->EvaluatingTopLevelCommand) &&
-       (EvaluationData(theEnv)->CurrentExpression == NULL))
-     { PeriodicCleanup(theEnv,TRUE,FALSE); }
-
-   /*===========================*/
-   /* Clear has been completed. */
-   /*===========================*/
 
    ConstructData(theEnv)->ClearInProgress = FALSE;
    return TRUE;

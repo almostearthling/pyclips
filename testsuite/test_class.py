@@ -371,9 +371,6 @@ class ctc_Class(ctestcase):
 
     def ctf_Slots_06(self):
         """Testing: Slots.DefaultValue, Slots.AllowedClasses"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()

@@ -25,7 +25,7 @@
 A Python module to interface the CLIPS expert system shell library."""
 
 
-__revision__ = "$Id: setup.py 373 2009-03-13 01:38:17Z franz $"
+__revision__ = "$Id: setup.py 342 2008-02-22 01:17:23Z Franz $"
 print "Module 'clips': Python to CLIPS interface"
 print "Setup revision: %s" % __revision__
 
@@ -37,7 +37,7 @@ print "Setup revision: %s" % __revision__
 PYCLIPS_MAJOR = 1
 PYCLIPS_MINOR = 0
 PYCLIPS_PATCHLEVEL = 7
-PYCLIPS_INCREMENTAL = 341
+PYCLIPS_INCREMENTAL = 343
 PYCLIPS_VERSION = "%s.%s.%s.%s" % (
     PYCLIPS_MAJOR,
     PYCLIPS_MINOR,
@@ -55,9 +55,6 @@ APPLY_PATCHSETS = [
     'bgfx',     # official patches to the CLIPS source
     'test',     # "experimental" (unofficial) but useful patches
     ]
-
-# this will be used to download CLIPS source if not found
-CLIPS_SRC_URL = "http://pyclips.sourceforge.net/files/CLIPSSrc.zip"
 
 # standard indentation for conversion (4 spaces)
 INDENT = " " * 4
@@ -132,26 +129,14 @@ setup_h_templ = """\
 #endif
 
 
-#if CLIPS_MAJOR >= 6
-
-#if CLIPS_MINOR < 23
-#error "Cannot build using CLIPS version less than 6.23"
-#endif /* CLIPS_MINOR >= 23 */
-
 #define VOID     void
 #define VOID_ARG void
 #define STD_SIZE size_t
 
-#if CLIPS_MINOR < 24
-#define BOOLEAN int
-#else
 #define intBool int
-#endif /* CLIPS_MINOR < 24 */
-
 #define globle
 
 #define ALLOW_ENVIRONMENT_GLOBALS 1
-#define BASIC_IO 1
 #define BLOAD 0
 #define BLOAD_AND_BSAVE 1
 #define BLOAD_ONLY 0
@@ -170,12 +155,11 @@ setup_h_templ = """\
 #define DEFRULE_CONSTRUCT 1
 #define DEFTEMPLATE_CONSTRUCT 1
 #define EMACS_EDITOR 0
-#define ENVIRONMENT_API_ONLY 0
-#define EX_MATH 1
-#define EXT_IO 1
+#define EXTENDED_MATH_FUNCTIONS 1
 #define FACT_SET_QUERIES 1
 #define HELP_FUNCTIONS 0
 #define INSTANCE_SET_QUERIES 1
+#define IO_FUNCTIONS 1
 #define MULTIFIELD_FUNCTIONS 1
 #define OBJECT_SYSTEM 1
 #define PROFILING_FUNCTIONS 1
@@ -185,21 +169,6 @@ setup_h_templ = """\
 #define WINDOW_INTERFACE 1
 
 #define DEVELOPER 0
-
-#if CLIPS_MINOR < 24
-#define AUXILIARY_MESSAGE_HANDLERS 1
-#define DYNAMIC_SALIENCE 1
-#define IMPERATIVE_MESSAGE_HANDLERS 1
-#define IMPERATIVE_METHODS 1
-#define INCREMENTAL_RESET 1
-#define INSTANCE_PATTERN_MATCHING 1
-#define LOGICAL_DEPENDENCIES  1
-#define SHORT_LINK_NAMES 0
-#endif  /* CLIPS_MINOR < 24 */
-
-#else   /* CLIPS_MAJOR >= 6 */
-#error "Cannot build using CLIPS version less than 6.23"
-#endif
 
 #include "envrnmnt.h"
 
@@ -339,7 +308,7 @@ from _clips_wrap import Nil, Integer, Float, String, Symbol, InstanceName, \\
                         ClipsSymbolType, ClipsInstanceNameType, \\
                         ClipsMultifieldType, ClipsNilType, \\
                         _setStockClasses, _accepts_method, _forces_method, \\
-                        AROUND, BEFORE, PRIMARY, AFTER
+                        AROUND, BEFORE, PRIMARY, AFTER, CLIPS_VERSION
 
 
 
@@ -664,53 +633,6 @@ def normalize_eols(t):
     return li
 
 
-if not os.path.exists(ClipsLIB_dir):
-    if not os.path.exists(ClipsSrcZIP):
-        # try to download file from official site
-        import urllib
-        print "CLIPS source archive (%s) not found, " \
-              "trying to download it for you..." % ClipsSrcZIP
-        try:
-            f = urllib.urlopen(CLIPS_SRC_URL)
-            s = f.read()
-            if not s:
-                raise   # anyway we'll answer that the source wasn't found
-            f = open(ClipsSrcZIP, 'wb')
-            f.write(s)
-            f.close()
-            print "Download successful, continuing build."
-            print "Please review CLIPS license in the downloaded ZIP file!"
-        except:
-            print "Download FAILED!"
-            print nozip_notice % ClipsSrcZIP
-            sys.exit(2)
-    import zipfile
-    try:
-        print "Opening CLIPS source archive (%s)..." % ClipsSrcZIP
-        zf = zipfile.ZipFile(ClipsSrcZIP)
-        os.mkdir(ClipsLIB_dir)
-        li = zf.namelist()
-        for x in li:
-            n = _p(ClipsLIB_dir, os.path.basename(x))
-            if n.endswith('.h') or n.endswith('.c'):
-                sys.stdout.write("\tExtracting %s... " % n)
-                li = normalize_eols(zf.read(x))
-                f = open(n, 'w')
-                for t in li:
-                    f.write("%s\n" % t)
-                f.close()
-                sys.stdout.write("done.\n")
-        zf.close()
-        print "All CLIPS source files extracted, continuing build."
-    except zipfile.error:
-        print badzip_notice % ClipsSrcZIP
-        sys.exit(2)
-    except:
-        print nozip_notice % ClipsSrcZIP
-        sys.exit(2)
-
-
-
 # ----------------------------------------------------------------------------
 # -- 8-< -- CUT FROM HERE --------------------------------------------- >-8 --
 
@@ -806,7 +728,6 @@ clips_version = get_clips_version(_p("clipssrc", "constant.h"))
 print "Found CLIPS version: %s" % clips_version
 maj, min = clips_version.split('.', 1)
 CFLAGS = [
-    '-D_CRT_SECURE_NO_WARNINGS',
     '-DPYCLIPS',
     '-DCLIPS_MAJOR=%s' % maj,
     '-DCLIPS_MINOR=%s' % min,
@@ -923,7 +844,7 @@ else:
 
 
 setup(name="pyclips",
-      version="%s-clips_%s" % (PYCLIPS_VERSION, clips_version),
+      version=PYCLIPS_VERSION,
       description="Python CLIPS interface",
       long_description=__doc__,
       author="Francesco Garosi",

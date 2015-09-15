@@ -62,12 +62,12 @@ class ctc_Submitted(ctestcase):
         env2 = clips.Environment()
         t1 = env1.BuildTemplate("t1", "(slot s1)")
         t2 = env2.BuildTemplate("t2", "(slot s2)")
-        f1 = t1.BuildFact()
-        f2 = t2.BuildFact()
-        f1.Slots["s1"] = "1"
-        f2.Slots["s2"] = "2"
         env1.Reset()
+        f1 = t1.BuildFact()
+        f1.Slots["s1"] = "1"
         env2.Reset()
+        f2 = t2.BuildFact()
+        f2.Slots["s2"] = "2"
         f1.Assert()
         f2.Assert()
         self.assertEqual(f1.Index, f2.Index)

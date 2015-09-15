@@ -15,17 +15,10 @@
 #endif  /* BOOLEAN */
 
 
-#if ENVIRONMENT_API_ONLY
-#define Matches_PY(theEnv,s,a) EnvMatches_PY(theEnv,s,a)
-#define Clear_PY(theEnv) EnvClear_PY(theEnv)
-#define GetNextInstanceInClassAndSubclasses_PY(theEnv,a,b,c) \
-        EnvGetNextInstanceInClassAndSubclasses_PY(theEnv,a,b,c)
-#else
 #define Matches_PY(s,a) EnvMatches_PY(GetCurrentEnvironment(),s,a)
 #define Clear_PY() EnvClear_PY(GetCurrentEnvironment())
 #define GetNextInstanceInClassAndSubclasses_PY(a,b,c) \
         EnvGetNextInstanceInClassAndSubclasses_PY(GetCurrentEnvironment(),a,b,c)
-#endif
 
 
 LOCALE BOOLEAN EnvMatches_PY(void *,char *,void *);
