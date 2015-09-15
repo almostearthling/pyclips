@@ -51,14 +51,6 @@ REQUIREMENTS
 PyCLIPS requires Python 2.4 or higher to work. Recently it has been tested
 on Python 2.5. Previous versions of Python are not supported.
 
-PyCLIPS also requires the CLIPS 6.23 or CLIPS 6.24 sources to compile.
-Compilation will fail against CLIPS version 6.22 or earlier: although the
-CLIPS API is quite stable, there are some improvements at this level in
-CLIPS 6.23 which are required for PyCLIPS. If you don't need to stick to
-the former CLIPS version, please use CLIPS 6.24: the previous version lacks
-some features and PyCLIPS is mostly developed against the more recent
-release.
-
 I use GCC 3.x to compile PyCLIPS both on UNIX (Linux and Solaris) and on
 Win32. If Python was compiled using Visual C 9.0 (the one released with
 Visual Studio 2008 Express) and the Platform SDK, this environment does also

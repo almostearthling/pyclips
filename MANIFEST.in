@@ -1,0 +1,3 @@
+include *.h
+include loptr.c
+recursive-include clipssrc *.h *.c

@@ -244,9 +244,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_04(self):
         """Testing: Template.InitialFact, Template.NextFact"""
-        if clips.CLIPS_VERSION < "6.23":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -272,9 +269,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_05(self):
         """Testing: Template.Slots.AllowedValues, Template.Slots.Cardinality"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -295,9 +289,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_06(self):
         """Testing: Template.Slots.HasDefault, Template.Slots.DefaultValue"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -317,9 +308,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_07(self):
         """Testing: Template.Slots.Exists, Template.Slots.Range"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -344,9 +332,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_08(self):
         """Testing: Template.Slots.Names, Template.Slots.Types"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -372,9 +357,6 @@ class ctc_Fact(ctestcase):
 
     def ctf_Template_09(self):
         """Testing: Template.Slots.IsSinglefield, Template.Slots.IsMultifield"""
-        if clips.CLIPS_VERSION < "6.24":
-            sys.stderr.write("SKIPPED ")
-            return
         for x in self.envdict.keys():
             e = self.envdict[x]
             e.Clear()
@@ -388,24 +370,5 @@ class ctc_Fact(ctestcase):
             self.assert_(not t1.Slots.IsMultifield('s1'))
             self.assert_(not t1.Slots.IsSinglefield('s2'))
             self.assert_(t1.Slots.IsMultifield('s2'))
-
-    def ctf_Template_10(self):
-        """Testing: Template Facts coherence between assertions"""
-        for x in self.envdict.keys():
-            e = self.envdict[x]
-            e.Clear()
-            e.Reset()
-            t1 = e.BuildTemplate(
-                "t1", """
-                (slot s1)
-                """, "test template")
-            f11 = t1.BuildFact()
-            f11.Slots['s1'] = clips.Symbol("sym13")
-            f12 = t1.BuildFact()
-            f12.Slots['s1'] = clips.Symbol("sym42")
-            f11.Assert()
-            self.assertEqual(f11.Slots['s1'], clips.Symbol("sym13"))
-            self.assertEqual(f12.Slots['s1'], clips.Symbol("sym42"))
-
 
 # end.
