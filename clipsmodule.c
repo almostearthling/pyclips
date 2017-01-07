@@ -1764,7 +1764,7 @@ BOOL i_py2do_e(void *env, PyObject *p, DATA_OBJECT *o) {
     case INTEGER:
         if(! (PyInt_Check(value) || PyLong_Check(value)) )
             goto fail;
-        i = PyInt_AsLongLong(value);
+        i = PyLong_AsLongLong(value);
         do_value = EnvAddLong(env, i);
         break;
     case FLOAT:
@@ -3093,7 +3093,7 @@ arguments:\n\
   fact (fact) - the fact to look for";
 static PyObject *g_factIndex(PyObject *self, PyObject *args) {
     clips_FactObject *p = NULL;
-    long int i = 0;
+    long long i = 0;
 
     if(!PyArg_ParseTuple(args, "O!", &clips_FactType, &p))
         FAIL();
@@ -4817,7 +4817,7 @@ returns: the number of fired rules\n\
 arguments:\n\
   limit (int) - number of rules to fire, all if omitted";
 static PyObject *g_run(PyObject *self, PyObject *args) {
-    long runlimit = -1;
+    long long runlimit = -1;
 
     if(!PyArg_ParseTuple(args, "|i", &runlimit))
         FAIL();
@@ -10507,7 +10507,7 @@ static PyObject *e_factIndex(PyObject *self, PyObject *args) {
     clips_EnvObject *pyenv = NULL;
     void *env = NULL;
     clips_FactObject *p = NULL;
-    long int i = 0;
+    long long i = 0;
 
     if(!PyArg_ParseTuple(args, "O!O!",
                          &clips_EnvType, &pyenv, &clips_FactType, &p))
@@ -12516,7 +12516,7 @@ arguments:\n\
 static PyObject *e_run(PyObject *self, PyObject *args) {
     clips_EnvObject *pyenv = NULL;
     void *env = NULL;
-    long runlimit = -1;
+    long long runlimit = -1;
 
     if(!PyArg_ParseTuple(args, "O!|i", &clips_EnvType, &pyenv, &runlimit))
         FAIL();
