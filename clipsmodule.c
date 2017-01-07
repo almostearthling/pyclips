@@ -1490,7 +1490,7 @@ PyObject *i_do2py_mfhelp_e(void *env, void *ptr, int pos) {
     /* check for return type and build a PyObject to return */
     switch(t) {
     case INTEGER:
-        p = Py_BuildValue("(ii)", t, ValueToLong(GetMFValue(ptr, pos)));
+        p = Py_BuildValue("(iL)", t, ValueToLong(GetMFValue(ptr, pos)));
         break;
     case FLOAT:
         p = Py_BuildValue("(id)", t, ValueToDouble(GetMFValue(ptr, pos)));
@@ -1579,7 +1579,7 @@ PyObject *i_do2py_e(void *env, DATA_OBJECT *o) {
     /* check for return type and build a PyObject to return */
     switch(t) {
     case INTEGER:
-        p = Py_BuildValue("(il)", t, DOPToLong(o));
+        p = Py_BuildValue("(iL)", t, DOPToLong(o));
         break;
     case FLOAT:
         p = Py_BuildValue("(id)", t, DOPToDouble(o));
@@ -1751,7 +1751,9 @@ BOOL i_py2do_e(void *env, PyObject *p, DATA_OBJECT *o) {
     int type = 0;
     PyObject *value = NULL, *item = NULL;
     void *do_value = NULL;
-    long i = 0, n = 0;
+    long long i = 0;
+    Py_ssize_t i2 = 0;
+    Py_ssize_t n = 0;
     double d = 0;
     char *s = NULL;
 
@@ -1760,9 +1762,9 @@ BOOL i_py2do_e(void *env, PyObject *p, DATA_OBJECT *o) {
     value = PY_DATA_OBJECT_VALUE(p);
     switch(type) {
     case INTEGER:
-        if(!PyInt_Check(value))
+        if(! (PyInt_Check(value) || PyLong_Check(value)) )
             goto fail;
-        i = PyInt_AsLong(value);
+        i = PyInt_AsLongLong(value);
         do_value = EnvAddLong(env, i);
         break;
     case FLOAT:
@@ -1786,11 +1788,11 @@ BOOL i_py2do_e(void *env, PyObject *p, DATA_OBJECT *o) {
         if(n == 0) goto fail;
         if(!(do_value = EnvCreateMultifield(env, n)))
             goto fail;
-        for(i = 0; i < n; i++) {
-            item = PyList_GetItem(value, i);
+        for(i2 = 0; i2 < n; i2++) {
+            item = PyList_GetItem(value, i2);
             if(!item)
                 goto fail;
-            if(!i_py2do_mfhelp_e(env, item, do_value, (int)(i + 1)))
+            if(!i_py2do_mfhelp_e(env, item, do_value, (int)(i2 + 1)))
                 goto fail;
         }
         break;  /* n is still good for below */
