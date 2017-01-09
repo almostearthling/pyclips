@@ -282,41 +282,41 @@ def _forces_method(*types):
 # High-level classes to embed clips internal types
 
 # 1) numeric types
-class Integer(int):
-    """extend an int for use with CLIPS"""
+class Integer(long):
+    """extend a long for use with CLIPS"""
     def __repr__(self):
-        return "<Integer %s>" % int.__repr__(self)
+        return "<Integer %s>" % long.__repr__(self)
     def __add__(self, o):
-        return Integer(int(self) + int(o))
+        return Integer(long(self) + long(o))
     def __sub__(self, o):
-        return Integer(int(self) - int(o))
+        return Integer(long(self) - long(o))
     def __mul__(self, o):
-        return Integer(int(self) * int(o))
+        return Integer(long(self) * long(o))
     def __floordiv__(self, o):
-        return Integer(int(self) // int(o))
+        return Integer(long(self) // long(o))
     def __truediv__(self, o):
-        return Integer(int(self) / int(o))
+        return Integer(long(self) / long(o))
     def __div__(self, o):
-        return Integer(int(self) / int(o))
+        return Integer(long(self) / long(o))
     def __mod__(self, o):
-        return Integer(int(self) % int(o))
+        return Integer(long(self) % long(o))
     def __lshift__(self, o):
-        return Integer(int(self) << int(o))
+        return Integer(long(self) << long(o))
     def __rshift__(self, o):
-        return Integer(int(self) >> int(o))
+        return Integer(long(self) >> long(o))
     def __and__(self, o):
-        return Integer(int(self) & int(o))
+        return Integer(long(self) & long(o))
     def __xor__(self, o):
-        return Integer(int(self) ^ int(o))
+        return Integer(long(self) ^ long(o))
     def __or__(self, o):
-        return Integer(int(self) | int(o))
+        return Integer(long(self) | long(o))
     def __pow__(self, o, m=None):
         if m is not None:
-            return Integer((int(self) ** int(o)) % int(m))
-        return Integer(int(self) ** int(o))
+            return Integer((long(self) ** long(o)) % long(m))
+        return Integer(long(self) ** long(o))
     def clrepr(self):
         """represent this Integer for CLIPS"""
-        return (_c.INTEGER, int(self))
+        return (_c.INTEGER, long(self))
     def clsyntax(self):
         """represent this Integer as it would be in CLIPS syntax"""
         return str(self)
